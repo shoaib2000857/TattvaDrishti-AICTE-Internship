@@ -66,14 +66,17 @@ export default function IntakeForm({
   const [speechSupported, setSpeechSupported] = useState(true);
   const [speechError, setSpeechError] = useState("");
 
-  const isLight = variant === "light";
+  const isSimple = variant === "simple";
+  const isLight = variant === "light" || isSimple;
   const inputClass = isLight
-    ? "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+    ? "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100"
     : "input";
   const textareaClass = isLight
-    ? "mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+    ? "mt-2 w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base leading-7 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100"
     : "mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50";
-  const containerClass = isLight
+  const containerClass = isSimple
+    ? "space-y-6"
+    : isLight
     ? "mt-6 space-y-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/70"
     : "mt-6 space-y-6 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl shadow-black/30";
   const titleClass = isLight
@@ -249,7 +252,7 @@ export default function IntakeForm({
 
   return (
     <form onSubmit={handleSubmit} className={containerClass}>
-      <header className="flex flex-col gap-2">
+      <header className={`flex flex-col gap-2 ${isSimple ? "sr-only" : ""}`}>
         <h2 className={titleClass}>
           Submit narrative for detection
         </h2>
@@ -261,7 +264,7 @@ export default function IntakeForm({
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <label htmlFor="payload-text" className={labelClass}>
-            Narrative payload
+          {isSimple ? "Message or narrative" : "Narrative payload"}
           </label>
           <button
             type="button"
@@ -276,22 +279,32 @@ export default function IntakeForm({
                 isListening ? "bg-rose-300 animate-pulse" : "bg-emerald-300"
               }`}
             />
-            {isListening ? "Stop dictation" : "Use voice input"}
+            {isListening ? "Stop listening" : "Dictate"}
           </button>
         </div>
         <textarea
           id="payload-text"
           name="text"
-          rows={6}
+          rows={isSimple ? 8 : 6}
           required
-          placeholder="Paste suspect content or hostile call-to-action..."
+          placeholder={
+            isSimple
+              ? "Paste the message, social media post, transcript, or suspicious text here…"
+              : "Paste suspect content or hostile call-to-action..."
+          }
           value={text}
           onChange={(event) => setText(event.target.value)}
           className={textareaClass}
         />
-        <p className="mt-2 text-xs text-slate-500">
-          Minimum {minCharacters} characters. The orchestrator runs heuristics,
-          watermark checks, and graph ingestion automatically.
+        <p className="mt-2 flex items-center justify-between gap-4 text-xs text-slate-500">
+          <span>
+            {isSimple
+              ? "Use the original wording for a more reliable result."
+              : `Minimum ${minCharacters} characters. The orchestrator runs heuristics, watermark checks, and graph ingestion automatically.`}
+          </span>
+          <span className={`shrink-0 font-medium ${text.trim().length >= minCharacters ? "text-emerald-700" : "text-slate-400"}`}>
+            {text.trim().length} / {minCharacters} min
+          </span>
         </p>
         {speechError && (
           <p className="mt-2 text-xs text-rose-300">{speechError}</p>
@@ -303,15 +316,52 @@ export default function IntakeForm({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 text-sm">
+      <div className={`grid grid-cols-1 gap-4 text-sm ${isSimple ? "sm:grid-cols-2" : "md:grid-cols-3"}`}>
         <InputField label="Language" variant={variant} emphasis={metadataLabelEmphasis}>
-          <input
-            id="payload-language"
-            value={language}
-            onChange={(event) => setLanguage(event.target.value)}
-            className={inputClass}
-          />
+          {isSimple ? (
+            <select
+              id="payload-language"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+              className={inputClass}
+            >
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="ur">Urdu</option>
+              <option value="bn">Bengali</option>
+              <option value="te">Telugu</option>
+              <option value="ta">Tamil</option>
+              <option value="mr">Marathi</option>
+              <option value="gu">Gujarati</option>
+              <option value="pa">Punjabi</option>
+              <option value="kn">Kannada</option>
+              <option value="ml">Malayalam</option>
+            </select>
+          ) : (
+            <input
+              id="payload-language"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+              className={inputClass}
+            />
+          )}
         </InputField>
+        {isSimple && (
+          <InputField label="Location / region" variant={variant} emphasis={metadataLabelEmphasis}>
+            <RegionInput
+              regionInputRef={regionInputRef}
+              region={region}
+              filteredCities={filteredCities}
+              showRegionSuggestions={showRegionSuggestions}
+              setShowRegionSuggestions={setShowRegionSuggestions}
+              handleRegionChange={handleRegionChange}
+              selectCity={selectCity}
+              inputClass={inputClass}
+            />
+          </InputField>
+        )}
+        {!isSimple && (
+          <>
         <InputField label="Source channel" variant={variant} emphasis={metadataLabelEmphasis}>
           <input
             id="payload-source"
@@ -330,8 +380,36 @@ export default function IntakeForm({
             className={inputClass}
           />
         </InputField>
+          </>
+        )}
       </div>
 
+      {isSimple ? (
+        <details className="group rounded-2xl border border-slate-200 bg-slate-50/80">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-sm font-semibold text-slate-700 marker:content-none">
+            <span>
+              Add more context <span className="font-normal text-slate-500">(optional)</span>
+            </span>
+            <svg className="h-4 w-4 text-slate-400 transition group-open:rotate-180" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </summary>
+          <div className="grid grid-cols-1 gap-4 border-t border-slate-200 px-4 py-4 sm:grid-cols-2">
+            <InputField label="Source channel" variant={variant} emphasis={metadataLabelEmphasis}>
+              <input id="payload-source" value={source} placeholder="e.g. public tip, social feed" onChange={(event) => setSource(event.target.value)} className={inputClass} />
+            </InputField>
+            <InputField label="Platform" variant={variant} emphasis={metadataLabelEmphasis}>
+              <input id="payload-platform" value={platform} placeholder="e.g. WhatsApp, Telegram" onChange={(event) => setPlatform(event.target.value)} className={inputClass} />
+            </InputField>
+            <InputField label="Reference / actor ID" variant={variant} emphasis={metadataLabelEmphasis}>
+              <input id="payload-actor" value={actorId} placeholder="If one is available" onChange={(event) => setActorId(event.target.value)} className={inputClass} />
+            </InputField>
+            <InputField label="Tags" variant={variant} emphasis={metadataLabelEmphasis}>
+              <input id="payload-tags" value={tags} placeholder="e.g. disinformation, threat" onChange={(event) => setTags(event.target.value)} className={inputClass} />
+            </InputField>
+          </div>
+        </details>
+      ) : (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 text-sm">
         <InputField label="Platform" variant={variant} emphasis={metadataLabelEmphasis}>
           <input
@@ -343,36 +421,16 @@ export default function IntakeForm({
           />
         </InputField>
         <InputField label="Region" variant={variant} emphasis={metadataLabelEmphasis}>
-          <div ref={regionInputRef} className="relative">
-            <input
-              id="payload-region"
-              value={region}
-              placeholder="Start typing city name..."
-              required
-              onChange={(event) => handleRegionChange(event.target.value)}
-              onFocus={() => {
-                if (region.trim() && filteredCities.length > 0) {
-                  setShowRegionSuggestions(true);
-                }
-              }}
-              className={inputClass}
-              autoComplete="off"
-            />
-            {showRegionSuggestions && filteredCities.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-slate-300 dark:border-white/20 bg-white dark:bg-slate-900/95 backdrop-blur-sm shadow-xl">
-                {filteredCities.map((city, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={() => selectCity(city)}
-                    className="w-full px-4 py-2.5 text-left text-sm text-slate-800 dark:text-slate-200 hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-300 transition-colors first:rounded-t-lg last:rounded-b-lg border-b border-slate-200 dark:border-white/5 last:border-b-0"
-                  >
-                    {city}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <RegionInput
+            regionInputRef={regionInputRef}
+            region={region}
+            filteredCities={filteredCities}
+            showRegionSuggestions={showRegionSuggestions}
+            setShowRegionSuggestions={setShowRegionSuggestions}
+            handleRegionChange={handleRegionChange}
+            selectCity={selectCity}
+            inputClass={inputClass}
+          />
         </InputField>
         <InputField label="Actor ID" variant={variant} emphasis={metadataLabelEmphasis}>
           <input
@@ -384,18 +442,21 @@ export default function IntakeForm({
           />
         </InputField>
       </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className={`flex items-center gap-2 ${statusTextClass}`}>
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          Pipeline orchestration online
+          {isSimple ? "Secure analysis service ready" : "Pipeline orchestration online"}
         </div>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="inline-flex items-center gap-2 rounded-full bg-emerald-400/90 px-6 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+          className={isSimple
+            ? "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/10 transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+            : "inline-flex items-center gap-2 rounded-full bg-emerald-400/90 px-6 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50"}
         >
-          Analyse narrative
+          {isSubmitting ? "Analysing…" : isSimple ? "Analyse message" : "Analyse narrative"}
           <svg
             className="h-4 w-4"
             viewBox="0 0 20 20"
@@ -417,7 +478,7 @@ export default function IntakeForm({
 }
 
 function InputField({ label, children, variant = "dark", emphasis = "normal" }) {
-  const isLight = variant === "light";
+  const isLight = variant === "light" || variant === "simple";
   const baseColor = isLight ? "text-slate-500" : "text-slate-400";
   const emphasisClass =
     emphasis === "bold"
@@ -438,5 +499,49 @@ function InputField({ label, children, variant = "dark", emphasis = "normal" }) 
       </span>
       {children}
     </label>
+  );
+}
+
+function RegionInput({
+  regionInputRef,
+  region,
+  filteredCities,
+  showRegionSuggestions,
+  setShowRegionSuggestions,
+  handleRegionChange,
+  selectCity,
+  inputClass,
+}) {
+  return (
+    <div ref={regionInputRef} className="relative">
+      <input
+        id="payload-region"
+        value={region}
+        placeholder="Start typing a city or district"
+        required
+        onChange={(event) => handleRegionChange(event.target.value)}
+        onFocus={() => {
+          if (region.trim() && filteredCities.length > 0) {
+            setShowRegionSuggestions(true);
+          }
+        }}
+        className={inputClass}
+        autoComplete="off"
+      />
+      {showRegionSuggestions && filteredCities.length > 0 && (
+        <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+          {filteredCities.map((city) => (
+            <button
+              key={city}
+              type="button"
+              onClick={() => selectCity(city)}
+              className="w-full px-4 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-800"
+            >
+              {city}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

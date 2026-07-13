@@ -86,8 +86,11 @@ export default function ImageAnalyzer({ variant = "dark" }) {
     }
   };
 
-  const isLight = variant === "light";
-  const containerClass = isLight
+  const isSimple = variant === "simple";
+  const isLight = variant === "light" || isSimple;
+  const containerClass = isSimple
+    ? "space-y-5"
+    : isLight
     ? "rounded-[28px] border border-slate-200 bg-white px-6 py-5 shadow-xl shadow-slate-200/80"
     : "rounded-2xl border border-white/10 bg-slate-950/60 px-6 py-5";
   const headingClass = isLight
@@ -97,10 +100,10 @@ export default function ImageAnalyzer({ variant = "dark" }) {
     ? "text-sm text-slate-600"
     : "text-sm text-slate-400";
   const chooseButtonClass = isLight
-    ? "cursor-pointer rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100"
+    ? "inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 focus-within:ring-4 focus-within:ring-blue-100"
     : "cursor-pointer rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-500/20";
   const togglesContainerClass = isLight
-    ? "rounded-2xl border border-slate-200 bg-slate-50 p-4"
+    ? "rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
     : "rounded-lg border border-white/10 bg-slate-900/40 p-4";
   const toggleTitleClass = isLight
     ? "mb-3 text-sm font-semibold text-slate-800"
@@ -170,7 +173,7 @@ export default function ImageAnalyzer({ variant = "dark" }) {
 
   return (
     <div className={containerClass}>
-      <header className="mb-5">
+      <header className={`mb-5 ${isSimple ? "sr-only" : ""}`}>
         <h2 className={headingClass}>Image Content Analyzer</h2>
         <p className={`mt-1 ${subHeadingClass}`}>
           Detect AI-generated images, gore, violence, offensive content, and more
@@ -179,7 +182,7 @@ export default function ImageAnalyzer({ variant = "dark" }) {
 
       <div className="space-y-4">
         {/* File Upload */}
-        <div className="flex items-center gap-4">
+        <div className={`flex items-center gap-4 ${isSimple ? "rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-6" : ""}`}>
           <label
             htmlFor="image-upload"
             className={chooseButtonClass}
@@ -310,7 +313,9 @@ export default function ImageAnalyzer({ variant = "dark" }) {
           <button
             onClick={analyzeImage}
             disabled={analyzing}
-            className="rounded-lg bg-gradient-to-r from-green-600 to-blue-600 px-6 py-2.5 font-semibold text-white hover:from-blue-700 hover:to-green-700 disabled:opacity-50"
+            className={isSimple
+              ? "w-full rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white shadow-lg shadow-blue-900/10 transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:opacity-50"
+              : "rounded-lg bg-gradient-to-r from-green-600 to-blue-600 px-6 py-2.5 font-semibold text-white hover:from-blue-700 hover:to-green-700 disabled:opacity-50"}
           >
             {analyzing ? "Analyzing..." : "Analyze Image"}
           </button>
