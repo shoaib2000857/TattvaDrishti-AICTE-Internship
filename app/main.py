@@ -36,6 +36,7 @@ from .federated.ledger import Block
 from .federated.crypto import encrypt_data, decrypt_data, sha256
 from .heatmap import router as heatmap_router, record_point
 from .auth.middleware import role_protection
+from .ingest.router import router as ingest_router
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
@@ -56,6 +57,7 @@ app.add_middleware(
 
 # Heatmap API
 app.include_router(heatmap_router)
+app.include_router(ingest_router)
 
 
 @app.on_event("startup")

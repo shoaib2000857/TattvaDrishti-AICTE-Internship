@@ -15,6 +15,7 @@ import WorldHeatmapLeaflet from "@/components/WorldHeatmapLeaflet";
 import BlockchainGraph from "@/components/BlockchainGraph";
 import HopTraceMap from "@/components/HopTraceMap";
 import ThemeToggle from "@/components/ThemeToggle";
+import SocialIngestPanel from "@/components/SocialIngestPanel";
 import {
   submitIntake,
   fetchCase,
@@ -321,6 +322,7 @@ export default function HomePage() {
         <section className="relative z-10 mx-auto max-w-7xl px-6 py-12 break-words">
           <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1.7fr_1fr] break-words">
             <div className="flex flex-col gap-8 break-all">
+              <SocialIngestPanel />
               <IntakeForm
                 onSubmit={handleSubmitIntake}
                 isSubmitting={isSubmitting}

@@ -4,6 +4,7 @@ uvicorn==0.23.2
 pydantic==2.12.5
 pydantic-settings==2.12.0
 httpx
+beautifulsoup4==4.12.3
 
 # Application Dependencies
 networkx==3.1

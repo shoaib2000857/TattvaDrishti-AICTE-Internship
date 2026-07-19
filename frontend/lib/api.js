@@ -47,6 +47,25 @@ export async function submitBatchFile({
   return res.json();
 }
 
+export async function ingestTelegramLink(payload) {
+  const res = await fetch(`${API_BASE_URL}/api/ingest/telegram`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      message = data?.detail?.message || data?.detail || message;
+    } catch (error) {
+      message = await res.text();
+    }
+    throw new Error(message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchCase(intakeId) {
   const res = await fetch(`${API_BASE_URL}/api/v1/cases/${encodeURIComponent(intakeId)}`);
   if (!res.ok) {
