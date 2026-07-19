@@ -1,4 +1,7 @@
 import json
+from datetime import datetime
+from time import perf_counter
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +11,10 @@ from fastapi.templating import Jinja2Templates
 from .config import Settings, get_settings
 from .schemas import (
     ContentIntake,
+    BatchDetectionResult,
+    BatchIntakeEnvelope,
+    BatchItemError,
+    BatchItemResult,
     BaseModel,
     DetectionResult,
     SharingPackage,
@@ -16,6 +23,12 @@ from .schemas import (
     ThreatIntelFeed,
 )
 from .services.orchestrator import AnalysisOrchestrator
+from .services.batch import (
+    BatchFileError,
+    ParsedBatch,
+    envelope_to_parsed,
+    parse_batch_file,
+)
 from .storage.database import Database
 from .federated.manager import LedgerManager
 from .federated.node import Node
@@ -51,12 +64,12 @@ async def startup_event():
     # Database init is already called in Database.__init__, but we verify it here
     # to surface any errors early
     try:
-        database._initialise()
+        database_l1._initialise()
     except Exception as e:
         print(f"Database initialization warning: {e}")
 
 
-def get_app_settings() -> Settings:
+async def get_app_settings() -> Settings:
     return settings
 
 
@@ -96,6 +109,127 @@ async def submit_content(
         pass
 
     return result
+
+
+async def _execute_batch(parsed: ParsedBatch, actor: str) -> BatchDetectionResult:
+    accepted_at = datetime.utcnow()
+    started = perf_counter()
+    outcomes = await orchestrator.process_batch(
+        [(record.message_id, record.intake) for record in parsed.records],
+        batch_id=parsed.batch_id,
+        actor=actor,
+    )
+
+    items = [
+        BatchItemResult(
+            index=rejection.index,
+            message_id=rejection.message_id,
+            status="error",
+            errors=rejection.errors,
+        )
+        for rejection in parsed.rejected
+    ]
+    for record, (result, error) in zip(parsed.records, outcomes):
+        if result is not None:
+            items.append(
+                BatchItemResult(
+                    index=record.index,
+                    message_id=record.message_id,
+                    status="success",
+                    result=result,
+                )
+            )
+            try:
+                region = record.intake.metadata.region if record.intake.metadata else None
+                if region:
+                    score = result.composite_score
+                    normalized = int(round(score * 100)) if 0 <= score <= 1 else int(round(score))
+                    record_point(str(region).strip(), max(0, min(100, normalized)))
+            except Exception:
+                pass
+        else:
+            items.append(
+                BatchItemResult(
+                    index=record.index,
+                    message_id=record.message_id,
+                    status="error",
+                    errors=[
+                        BatchItemError(
+                            code="processing_failed",
+                            message=error or "The message could not be processed.",
+                            line_number=record.line_number,
+                        )
+                    ],
+                )
+            )
+
+    items.sort(key=lambda item: item.index)
+    completed_at = datetime.utcnow()
+    succeeded = sum(item.status == "success" for item in items)
+    return BatchDetectionResult(
+        batch_id=parsed.batch_id,
+        source_system=parsed.source_system,
+        classification_marking=parsed.classification_marking,
+        accepted_at=accepted_at,
+        completed_at=completed_at,
+        duration_ms=max(0, round((perf_counter() - started) * 1000)),
+        total=parsed.total,
+        succeeded=succeeded,
+        failed=parsed.total - succeeded,
+        items=items,
+    )
+
+
+@app.post("/api/v1/intake/batch", response_model=BatchDetectionResult)
+async def submit_batch(
+    request: Request,
+    payload: BatchIntakeEnvelope,
+    _: Settings = Depends(get_app_settings),
+):
+    """Process a strict JSON batch envelope using the existing analysis pipeline."""
+    actor = await role_protection(request, "upload")
+    count = len(payload.messages)
+    if count == 0:
+        raise HTTPException(status_code=400, detail="The batch contains no messages.")
+    if count > settings.batch_max_records:
+        raise HTTPException(
+            status_code=413,
+            detail=f"The configured batch limit is {settings.batch_max_records} records.",
+        )
+    return await _execute_batch(envelope_to_parsed(payload), actor)
+
+
+@app.post("/api/v1/intake/batch/file", response_model=BatchDetectionResult)
+async def submit_batch_file(
+    request: Request,
+    file: UploadFile = File(...),
+    source_system: str = Form("file-upload"),
+    batch_id: Optional[str] = Form(None),
+    collection_id: Optional[str] = Form(None),
+    classification_marking: Optional[str] = Form(None),
+    _: Settings = Depends(get_app_settings),
+):
+    """Upload a JSON envelope or JSONL/NDJSON file with per-record errors."""
+    actor = await role_protection(request, "upload")
+    content = await file.read(settings.batch_max_file_bytes + 1)
+    if len(content) > settings.batch_max_file_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Batch file exceeds {settings.batch_max_file_bytes} bytes.",
+        )
+    try:
+        parsed = parse_batch_file(
+            content,
+            filename=file.filename or "",
+            source_system=source_system,
+            batch_id=batch_id,
+            collection_id=collection_id,
+            classification_marking=classification_marking,
+            max_records=settings.batch_max_records,
+        )
+    except BatchFileError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return await _execute_batch(parsed, actor)
 
 
 @app.get("/api/v1/cases/{intake_id}", response_model=DetectionResult)

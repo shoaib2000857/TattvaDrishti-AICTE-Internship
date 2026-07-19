@@ -3,7 +3,9 @@ import math
 import re
 import statistics
 from collections import Counter
-from typing import Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..config import get_settings
 from ..integrations.hf_detector import get_ai_detector
@@ -11,6 +13,15 @@ from ..integrations.ollama_client import OllamaClient
 from ..schemas import ContentIntake, DetectionBreakdown
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _PreparedDetection:
+    intake: ContentIntake
+    features: Dict[str, float]
+    heuristics: List[str]
+    stylometric_score: float
+    behavioral_score: float
 
 
 class DetectorEngine:
@@ -97,18 +108,95 @@ class DetectorEngine:
             self._ollama_client = None
 
     def detect(self, intake: ContentIntake) -> Tuple[float, str, DetectionBreakdown]:
-        text = intake.text
-        features = self._extract_features(text)
+        prepared = self._prepare_detection(intake)
+        ai_result, model_family_result = self._ai_detection(intake.text)
+        ollama_risk = self._ollama_risk_assessment(intake.text)
+        return self._finalize_detection(
+            prepared,
+            ai_result=ai_result,
+            model_family_result=model_family_result,
+            ollama_risk=ollama_risk,
+        )
 
-        # 1. Base Stylometric Score
+    def detect_batch(
+        self,
+        intakes: Sequence[ContentIntake],
+        *,
+        ai_batch_size: int = 16,
+        parallelism: int = 4,
+        ollama_parallelism: int = 2,
+    ) -> List[Tuple[float, str, DetectionBreakdown]]:
+        """Run the detection pipeline with bounded CPU, tensor, and LLM batching."""
+        if not intakes:
+            return []
+
+        cpu_workers = max(1, min(int(parallelism), len(intakes)))
+        if cpu_workers == 1:
+            prepared = [self._prepare_detection(intake) for intake in intakes]
+        else:
+            with ThreadPoolExecutor(max_workers=cpu_workers) as executor:
+                prepared = list(executor.map(self._prepare_detection, intakes))
+
+        if getattr(self._ai_detector, "available", False):
+            ai_results = self._ai_detector.analyze_texts(
+                [intake.text for intake in intakes],
+                batch_size=max(1, int(ai_batch_size)),
+            )
+        else:
+            ai_results = [(None, None) for _ in intakes]
+
+        llm_workers = max(1, min(int(ollama_parallelism), len(intakes)))
+        if self._ollama_client is None:
+            ollama_results: List[Optional[float]] = [None] * len(intakes)
+        elif llm_workers == 1:
+            ollama_results = [
+                self._ollama_risk_assessment(intake.text) for intake in intakes
+            ]
+        else:
+            with ThreadPoolExecutor(max_workers=llm_workers) as executor:
+                ollama_results = list(
+                    executor.map(
+                        self._ollama_risk_assessment,
+                        [intake.text for intake in intakes],
+                    )
+                )
+
+        return [
+            self._finalize_detection(
+                item,
+                ai_result=ai_result,
+                model_family_result=family_result,
+                ollama_risk=ollama_risk,
+            )
+            for item, (ai_result, family_result), ollama_risk in zip(
+                prepared, ai_results, ollama_results
+            )
+        ]
+
+    def _prepare_detection(self, intake: ContentIntake) -> _PreparedDetection:
+        features = self._extract_features(intake.text)
         stylometric_score = self._score_features(features)
-
-        # 2. Heuristics & Behavioral Analysis
         heuristics = self._run_heuristics(intake, features)
-        behavior_score = self._calculate_behavioral_risk(intake, features, heuristics)
+        behavioral_score = self._calculate_behavioral_risk(
+            intake, features, heuristics
+        )
+        return _PreparedDetection(
+            intake=intake,
+            features=features,
+            heuristics=heuristics,
+            stylometric_score=stylometric_score,
+            behavioral_score=behavioral_score,
+        )
 
-        # 3. AI Detection (Hugging Face / Local Model)
-        ai_result, model_family_result = self._ai_detection(text)
+    def _finalize_detection(
+        self,
+        prepared: _PreparedDetection,
+        *,
+        ai_result: Optional[Dict],
+        model_family_result: Optional[Dict],
+        ollama_risk: Optional[float],
+    ) -> Tuple[float, str, DetectionBreakdown]:
+        heuristics = prepared.heuristics
         ai_score: Optional[float] = None
         model_family: Optional[str] = None
         model_family_confidence: Optional[float] = None
@@ -128,8 +216,6 @@ class DetectorEngine:
                     f"Fingerprint matches {model_family} family ({model_family_confidence:.1%} match)."
                 )
 
-        # 4. Semantic Risk (Ollama)
-        ollama_risk = self._ollama_risk_assessment(text)
         if ollama_risk is not None:
             heuristics.append(
                 f"Ollama semantic analysis: {ollama_risk:.1%} risk "
@@ -138,12 +224,12 @@ class DetectorEngine:
 
         # 5. Composite Scoring
         # Sigmoid the linear stylometric score to get 0-1 range
-        base_prob = self._sigmoid(stylometric_score)
+        base_prob = self._sigmoid(prepared.stylometric_score)
 
         # Intelligently blend scores based on what is available
         composite = self._blend_scores(
             base_prob=base_prob,
-            behavior_score=behavior_score,
+            behavior_score=prepared.behavioral_score,
             ai_score=ai_score,
             ollama_risk=ollama_risk,
         )
@@ -152,7 +238,7 @@ class DetectorEngine:
 
         breakdown = DetectionBreakdown(
             linguistic_score=base_prob,
-            behavioral_score=behavior_score,
+            behavioral_score=prepared.behavioral_score,
             ai_probability=ai_score,
             model_family=model_family,
             model_family_confidence=model_family_confidence,
@@ -160,7 +246,9 @@ class DetectorEngine:
                 model_family_result.get("all_probabilities") if model_family_result else None
             ),
             ollama_risk=ollama_risk,
-            stylometric_anomalies={k: round(v, 3) for k, v in features.items()},
+            stylometric_anomalies={
+                key: round(value, 3) for key, value in prepared.features.items()
+            },
             heuristics=heuristics,
         )
 

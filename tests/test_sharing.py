@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 os.environ["HF_MODEL_NAME"] = "disabled"
@@ -13,6 +14,7 @@ get_settings.cache_clear()
 def test_sharing_package_masks_actor_id(tmp_path, monkeypatch):
     # ensure sqlite writes to temp location
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
+    get_settings.cache_clear()
 
     orchestrator = AnalysisOrchestrator()
     intake = ContentIntake(
@@ -27,6 +29,6 @@ def test_sharing_package_masks_actor_id(tmp_path, monkeypatch):
         justification="Joint task force investigation",
         include_personal_data=False,
     )
-    package = orchestrator.build_sharing_package(request)
+    package = asyncio.run(orchestrator.build_sharing_package(request))
     metadata = package.payload.get("metadata")
     assert '"actor_id"' not in metadata

@@ -1,14 +1,21 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, HttpUrl
 
 
 class SourceMetadata(BaseModel):
-    platform: str
+    platform: str = "unspecified"
     region: Optional[str] = None
     actor_id: Optional[str] = None
     related_urls: Optional[List[HttpUrl]] = None
+    message_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    observed_at: Optional[datetime] = None
+    source_system: Optional[str] = None
+    collection_id: Optional[str] = None
+    classification_marking: Optional[str] = None
+    attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ContentIntake(BaseModel):
@@ -17,6 +24,69 @@ class ContentIntake(BaseModel):
     source: str = Field("unknown")
     metadata: Optional[SourceMetadata] = None
     tags: Optional[List[str]] = None
+
+
+class BatchDefaults(BaseModel):
+    """Values inherited by messages that omit the corresponding field."""
+
+    language: str = Field("en", min_length=2, max_length=5)
+    source: str = "unknown"
+    metadata: Optional[SourceMetadata] = None
+    tags: List[str] = Field(default_factory=list)
+
+
+class BatchMessage(BaseModel):
+    """Portable message record used by JSON envelopes and JSON Lines files."""
+
+    message_id: str = Field(..., min_length=1, max_length=256)
+    text: str = Field(..., min_length=20, max_length=20000)
+    conversation_id: Optional[str] = Field(None, max_length=256)
+    observed_at: Optional[datetime] = None
+    language: Optional[str] = Field(None, min_length=2, max_length=5)
+    source: Optional[str] = None
+    metadata: Optional[SourceMetadata] = None
+    tags: Optional[List[str]] = None
+
+
+class BatchIntakeEnvelope(BaseModel):
+    """Versioned, self-describing batch interchange document."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    batch_id: Optional[str] = Field(None, min_length=1, max_length=256)
+    source_system: str = Field(..., min_length=1, max_length=256)
+    collection_id: Optional[str] = Field(None, max_length=256)
+    classification_marking: Optional[str] = Field(None, max_length=256)
+    defaults: BatchDefaults = Field(default_factory=BatchDefaults)
+    messages: List[BatchMessage]
+
+
+class BatchItemError(BaseModel):
+    code: str
+    message: str
+    field: Optional[str] = None
+    line_number: Optional[int] = None
+
+
+class BatchItemResult(BaseModel):
+    index: int
+    message_id: Optional[str] = None
+    status: Literal["success", "error"]
+    result: Optional["DetectionResult"] = None
+    errors: List[BatchItemError] = Field(default_factory=list)
+
+
+class BatchDetectionResult(BaseModel):
+    schema_version: Literal["1.0"] = "1.0"
+    batch_id: str
+    source_system: str
+    classification_marking: Optional[str] = None
+    accepted_at: datetime
+    completed_at: datetime
+    duration_ms: int
+    total: int
+    succeeded: int
+    failed: int
+    items: List[BatchItemResult]
 
 
 class DetectionBreakdown(BaseModel):

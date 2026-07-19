@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
 
@@ -42,7 +42,9 @@ class GraphIntelEngine:
         intake: ContentIntake,
         classification: str,
         composite_score: float,
-    ) -> GraphSummary:
+        *,
+        summarize: bool = True,
+    ) -> Optional[GraphSummary]:
         platform = "unknown"
         if intake.metadata and intake.metadata.platform:
             platform = intake.metadata.platform
@@ -88,7 +90,7 @@ class GraphIntelEngine:
             self.graph.add_node(region_node, type="region")
             self.graph.add_edge(actor_id, region_node, relation="origin")
 
-        return self._summarise()
+        return self._summarise() if summarize else None
 
     def summary(self) -> GraphSummary:
         return self._summarise()

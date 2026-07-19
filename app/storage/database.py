@@ -9,6 +9,12 @@ from typing import Any, Dict, Optional
 from ..config import get_settings
 
 
+def _json_default(value: Any) -> str:
+    """Serialize Pydantic URL types, datetimes, and other evidence metadata."""
+    isoformat = getattr(value, "isoformat", None)
+    return isoformat() if callable(isoformat) else str(value)
+
+
 class Database:
     def __init__(self) -> None:
         settings = get_settings()
@@ -40,6 +46,17 @@ class Database:
                 cur.execute("ALTER TABLE cases ADD COLUMN summary_text TEXT")
             if "decision_reason" not in columns:
                 cur.execute("ALTER TABLE cases ADD COLUMN decision_reason TEXT")
+            if "batch_id" not in columns:
+                cur.execute("ALTER TABLE cases ADD COLUMN batch_id TEXT")
+            if "external_message_id" not in columns:
+                cur.execute("ALTER TABLE cases ADD COLUMN external_message_id TEXT")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cases_batch_id ON cases(batch_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cases_external_message_id "
+                "ON cases(external_message_id)"
+            )
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS audit_log (
@@ -66,8 +83,9 @@ class Database:
 
     @contextmanager
     def _cursor(self):
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=30.0)
         try:
+            conn.execute("PRAGMA busy_timeout=30000")
             cur = conn.cursor()
             yield cur
             conn.commit()
@@ -85,6 +103,8 @@ class Database:
         provenance: Dict[str, Any],
         summary: Optional[str] = None,
         decision_reason: Optional[str] = None,
+        batch_id: Optional[str] = None,
+        external_message_id: Optional[str] = None,
     ) -> None:
         with self._cursor() as cur:
             cur.execute(
@@ -99,19 +119,23 @@ class Database:
                     provenance_json,
                     summary_text,
                     decision_reason,
+                    batch_id,
+                    external_message_id,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     intake_id,
                     raw_text,
                     classification,
                     composite_score,
-                    json.dumps(metadata),
-                    json.dumps(breakdown),
-                    json.dumps(provenance),
+                    json.dumps(metadata, default=_json_default),
+                    json.dumps(breakdown, default=_json_default),
+                    json.dumps(provenance, default=_json_default),
                     summary,
                     decision_reason,
+                    batch_id,
+                    external_message_id,
                     datetime.utcnow().isoformat(),
                 ),
             )
@@ -166,6 +190,8 @@ class Database:
                     provenance_json,
                     summary_text,
                     decision_reason,
+                    batch_id,
+                    external_message_id,
                     created_at
                 FROM cases WHERE intake_id=?
             """,
@@ -186,7 +212,9 @@ class Database:
                 "provenance": provenance,
                 "summary": row[6],
                 "decision_reason": row[7],
-                "created_at": row[8],
+                "batch_id": row[8],
+                "external_message_id": row[9],
+                "created_at": row[10],
             }
 
     def log_action(self, intake_id: str, action: str, actor: str, payload: Dict[str, Any]):
@@ -200,7 +228,7 @@ class Database:
                     intake_id,
                     action,
                     actor,
-                    json.dumps(payload),
+                    json.dumps(payload, default=_json_default),
                     datetime.utcnow().isoformat(),
                 ),
             )

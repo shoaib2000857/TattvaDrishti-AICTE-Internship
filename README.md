@@ -183,6 +183,10 @@ source .venv/bin/activate
 pytest
 ```
 
+## Batch message archives
+
+Bulk chat/message collections can be submitted as a versioned JSON envelope or as JSON Lines. The batch path uses vectorized Hugging Face inference, bounded Ollama concurrency, ordered persistence, and per-record error reporting. See [Batch Message Ingestion](docs/BATCH_INGESTION.md) and the files in [`samples/`](samples/).
+
 ---
 
 ## 📦 Dependencies

@@ -25,6 +25,28 @@ export async function submitIntake(payload) {
   return res.json();
 }
 
+export async function submitBatchFile({
+  file,
+  sourceSystem,
+  collectionId,
+  classificationMarking,
+}) {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("source_system", sourceSystem || "file-upload");
+  if (collectionId) body.append("collection_id", collectionId);
+  if (classificationMarking) body.append("classification_marking", classificationMarking);
+  const res = await fetch(`${API_BASE_URL}/api/v1/intake/batch/file`, {
+    method: "POST",
+    body,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchCase(intakeId) {
   const res = await fetch(`${API_BASE_URL}/api/v1/cases/${encodeURIComponent(intakeId)}`);
   if (!res.ok) {

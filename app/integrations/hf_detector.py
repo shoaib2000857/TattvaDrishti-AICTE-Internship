@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from functools import lru_cache
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, List, Optional, Sequence, Tuple, Any
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -31,6 +32,10 @@ class AIDetector:
         self._ai_human_tokenizer = None
         self._family_model = None
         self._family_tokenizer = None
+        # Torch modules are shared by all requests in this process. Serialising
+        # forward passes prevents concurrent single and batch requests from
+        # racing over the same GPU context.
+        self._inference_lock = threading.RLock()
 
         # Allow overriding the adapter checkpoint via env for flexibility
         self._ai_human_adapter_id = os.getenv(
@@ -146,90 +151,103 @@ class AIDetector:
         """
         Detect if text is AI-generated or human-written.
         """
-        if not self.available or not text.strip():
-            return None
+        return self.detect_ai_human_batch([text], batch_size=1)[0]
 
+    def detect_ai_human_batch(
+        self, texts: Sequence[str], *, batch_size: int = 16
+    ) -> List[Optional[Dict[str, Any]]]:
+        """Run vectorized AI/human inference while bounding model memory use."""
+        results: List[Optional[Dict[str, Any]]] = [None] * len(texts)
+        if not self.available:
+            return results
+
+        batch_size = max(1, int(batch_size))
         try:
-            # Tokenize (Let tokenizer handle truncation properly)
-            inputs = self._ai_human_tokenizer(
-                text,
-                return_tensors="pt",
-                truncation=True,
-                max_length=512,
-                padding=True
-            ).to(self._device)
+            with self._inference_lock:
+                for start in range(0, len(texts), batch_size):
+                    chunk = list(texts[start : start + batch_size])
+                    non_empty = [(idx, text) for idx, text in enumerate(chunk) if text.strip()]
+                    if not non_empty:
+                        continue
+                    inputs = self._ai_human_tokenizer(
+                        [text for _, text in non_empty],
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=512,
+                        padding=True,
+                    ).to(self._device)
+                    with torch.no_grad():
+                        outputs = self._ai_human_model(**inputs)
+                        probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)
 
-            with torch.no_grad():
-                outputs = self._ai_human_model(**inputs)
-                probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                    id2label = self._ai_human_model.config.id2label
+                    ai_index = 1
+                    for idx, label in id2label.items():
+                        if "AI" in str(label).upper() or "LABEL_1" in str(label).upper():
+                            ai_index = int(idx)
+                            break
+                    human_index = 1 - ai_index
 
-            # Dynamic Label Mapping (Safety check)
-            id2label = self._ai_human_model.config.id2label
-            
-            # Find which index corresponds to "AI" or "LABEL_1"
-            ai_index = 1 # Default
-            for idx, label in id2label.items():
-                if "AI" in str(label).upper() or "LABEL_1" in str(label).upper():
-                    ai_index = int(idx)
-                    break
-            
-            human_index = 1 - ai_index # Assuming binary 0/1
-
-            ai_prob = float(probabilities[0][ai_index].item())
-            human_prob = float(probabilities[0][human_index].item())
-
-            return {
-                "ai_probability": ai_prob,
-                "human_probability": human_prob,
-                "is_ai": ai_prob > 0.5,
-                "verdict": "AI" if ai_prob > 0.5 else "Human"
-            }
-
+                    for row, (chunk_index, _) in enumerate(non_empty):
+                        ai_prob = float(probabilities[row][ai_index].item())
+                        human_prob = float(probabilities[row][human_index].item())
+                        results[start + chunk_index] = {
+                            "ai_probability": ai_prob,
+                            "human_probability": human_prob,
+                            "is_ai": ai_prob > 0.5,
+                            "verdict": "AI" if ai_prob > 0.5 else "Human",
+                        }
         except Exception as exc:
-            logger.error(f"AI/Human detection failed: {exc}")
-            return None
+            logger.error("Batched AI/Human detection failed: %s", exc)
+        return results
 
     def detect_model_family(self, text: str) -> Optional[Dict[str, Any]]:
         """
         Detect which AI model family generated the text.
         """
-        if not self._family_model or not text.strip():
-            return None
+        return self.detect_model_family_batch([text], batch_size=1)[0]
 
+    def detect_model_family_batch(
+        self, texts: Sequence[str], *, batch_size: int = 16
+    ) -> List[Optional[Dict[str, Any]]]:
+        results: List[Optional[Dict[str, Any]]] = [None] * len(texts)
+        if not self._family_model or not self._family_tokenizer:
+            return results
+
+        batch_size = max(1, int(batch_size))
         try:
-            inputs = self._family_tokenizer(
-                text,
-                return_tensors="pt",
-                truncation=True,
-                max_length=512,
-                padding=True
-            ).to(self._device)
-
-            with torch.no_grad():
-                outputs = self._family_model(**inputs)
-                probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)
-
-            id2label = self._family_model.config.id2label
-
-            # Create readable probability dict
-            all_probs = {
-                id2label[i]: float(probabilities[0][i].item())
-                for i in sorted(id2label.keys()) # Ensure order
-            }
-
-            top_idx = int(torch.argmax(probabilities[0]).item())
-            family = id2label[top_idx]
-            confidence = float(probabilities[0][top_idx].item())
-
-            return {
-                "family": family,
-                "confidence": confidence,
-                "all_probabilities": all_probs
-            }
-
+            with self._inference_lock:
+                for start in range(0, len(texts), batch_size):
+                    chunk = list(texts[start : start + batch_size])
+                    non_empty = [(idx, text) for idx, text in enumerate(chunk) if text.strip()]
+                    if not non_empty:
+                        continue
+                    inputs = self._family_tokenizer(
+                        [text for _, text in non_empty],
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=512,
+                        padding=True,
+                    ).to(self._device)
+                    with torch.no_grad():
+                        outputs = self._family_model(**inputs)
+                        probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                    id2label = self._family_model.config.id2label
+                    label_indexes = sorted(int(index) for index in id2label.keys())
+                    for row, (chunk_index, _) in enumerate(non_empty):
+                        all_probs = {
+                            str(id2label[index]): float(probabilities[row][index].item())
+                            for index in label_indexes
+                        }
+                        top_idx = int(torch.argmax(probabilities[row]).item())
+                        results[start + chunk_index] = {
+                            "family": str(id2label[top_idx]),
+                            "confidence": float(probabilities[row][top_idx].item()),
+                            "all_probabilities": all_probs,
+                        }
         except Exception as exc:
-            logger.error(f"Model family detection failed: {exc}")
-            return None
+            logger.error("Batched model-family detection failed: %s", exc)
+        return results
 
     def analyze_text(self, text: str) -> Tuple[Optional[Dict], Optional[Dict]]:
         """
@@ -245,6 +263,25 @@ class AIDetector:
             family_result = self.detect_model_family(text)
         
         return ai_result, family_result
+
+    def analyze_texts(
+        self, texts: Sequence[str], *, batch_size: int = 16
+    ) -> List[Tuple[Optional[Dict], Optional[Dict]]]:
+        """Analyze many texts with one tensorized pass per configured chunk."""
+        ai_results = self.detect_ai_human_batch(texts, batch_size=batch_size)
+        family_results: List[Optional[Dict]] = [None] * len(texts)
+        ai_indexes = [
+            index
+            for index, result in enumerate(ai_results)
+            if result and result.get("is_ai", False)
+        ]
+        if ai_indexes and self._family_model:
+            detected = self.detect_model_family_batch(
+                [texts[index] for index in ai_indexes], batch_size=batch_size
+            )
+            for index, result in zip(ai_indexes, detected):
+                family_results[index] = result
+        return list(zip(ai_results, family_results))
 
 @lru_cache(maxsize=1)
 def get_ai_detector() -> AIDetector:

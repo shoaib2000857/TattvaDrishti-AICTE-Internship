@@ -1,11 +1,12 @@
 import asyncio
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
 import httpx
-from fastapi.concurrency import run_in_threadpool
 
 from ..models.detection import DetectorEngine
 from ..models.graph_intel import GraphIntelEngine
@@ -32,6 +33,13 @@ class AnalysisOrchestrator:
         self.sharing = SharingEngine()
         self.db = Database()
         self._event_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=200)
+        # NetworkX mutation and SQLite writes are ordered. Expensive detector
+        # stages run before this lock and therefore still benefit from batching.
+        self._state_lock = threading.RLock()
+        self._pipeline_executor = ThreadPoolExecutor(
+            max_workers=max(2, self.detector.settings.batch_parallelism),
+            thread_name_prefix="analysis-pipeline",
+        )
         
         # Initialize federated ledger if available
         if FEDERATED_ENABLED:
@@ -46,43 +54,162 @@ class AnalysisOrchestrator:
             self.node = None
 
     async def process_intake(self, intake: ContentIntake) -> DetectionResult:
-        return await run_in_threadpool(self._process_sync, intake)
+        return await self._await_pipeline(self._process_sync, intake)
+
+    async def process_batch(
+        self,
+        records: Sequence[Tuple[str, ContentIntake]],
+        *,
+        batch_id: str,
+        actor: str = "system",
+    ) -> List[Tuple[Optional[DetectionResult], Optional[str]]]:
+        """Analyze validated records as one model batch and persist in order."""
+        return await self._await_pipeline(
+            self._process_batch_sync,
+            records,
+            batch_id,
+            actor,
+        )
+
+    async def _await_pipeline(self, function, *args):
+        """Await dedicated worker work without depending on AnyIO's global pool."""
+        future = self._pipeline_executor.submit(function, *args)
+        while not future.done():
+            await asyncio.sleep(0.01)
+        return future.result()
 
     def _process_sync(self, intake: ContentIntake) -> DetectionResult:
+        composite_score, classification, breakdown = self.detector.detect(intake)
+        return self._complete_intake(
+            intake,
+            composite_score=composite_score,
+            classification=classification,
+            breakdown=breakdown,
+        )
+
+    def _process_batch_sync(
+        self,
+        records: Sequence[Tuple[str, ContentIntake]],
+        batch_id: str,
+        actor: str,
+    ) -> List[Tuple[Optional[DetectionResult], Optional[str]]]:
+        if not records:
+            return []
+        settings = self.detector.settings
+        try:
+            detections = self.detector.detect_batch(
+                [intake for _, intake in records],
+                ai_batch_size=settings.batch_ai_model_size,
+                parallelism=settings.batch_parallelism,
+                ollama_parallelism=settings.batch_ollama_parallelism,
+            )
+        except Exception as error:  # one infrastructure failure affects this model batch
+            message = f"Detection batch failed: {type(error).__name__}: {error}"
+            return [(None, message) for _ in records]
+
+        outcomes: List[Tuple[Optional[DetectionResult], Optional[str]]] = []
+        for (message_id, intake), detection in zip(records, detections):
+            composite_score, classification, breakdown = detection
+            try:
+                result = self._complete_intake(
+                    intake,
+                    composite_score=composite_score,
+                    classification=classification,
+                    breakdown=breakdown,
+                    batch_id=batch_id,
+                    external_message_id=message_id,
+                    actor=actor,
+                    summarize_graph=False,
+                )
+                outcomes.append((result, None))
+            except Exception as error:
+                outcomes.append(
+                    (None, f"Case persistence failed: {type(error).__name__}: {error}")
+                )
+        if len(outcomes) < len(records):
+            outcomes.extend(
+                (None, "Detection batch returned no result for this record.")
+                for _ in range(len(records) - len(outcomes))
+            )
+        successful_results = [result for result, _ in outcomes if result is not None]
+        if successful_results:
+            # Summarising the growing GNN after every record is quadratic work
+            # repeated N times. Batch ingestion mutates the graph in order and
+            # computes one consistent post-batch snapshot for every result.
+            with self._state_lock:
+                batch_graph_summary = self.graph.summary()
+            for result in successful_results:
+                result.graph_summary = batch_graph_summary
+        return outcomes
+
+    def _complete_intake(
+        self,
+        intake: ContentIntake,
+        *,
+        composite_score: float,
+        classification: str,
+        breakdown,
+        batch_id: Optional[str] = None,
+        external_message_id: Optional[str] = None,
+        actor: str = "system",
+        summarize_graph: bool = True,
+    ) -> DetectionResult:
         intake_id = str(uuid4())
         submitted_at = datetime.utcnow()
-
-        composite_score, classification, breakdown = self.detector.detect(intake)
         provenance = self.watermark.verify(intake.text)
-        graph_summary = self.graph.ingest(intake_id, intake, classification, composite_score)
-
         summary_text = self._generate_summary(intake, classification, composite_score, breakdown)
         decision_reason = self._build_decision_reason(classification, composite_score, breakdown)
+        with self._state_lock:
+            graph_summary = self.graph.ingest(
+                intake_id,
+                intake,
+                classification,
+                composite_score,
+                summarize=summarize_graph,
+            )
+            self.db.save_case(
+                intake_id=intake_id,
+                raw_text=intake.text,
+                classification=classification,
+                composite_score=composite_score,
+                metadata=intake.dict().get("metadata", {}) or {},
+                breakdown=breakdown.dict(),
+                provenance=provenance.dict(),
+                summary=summary_text,
+                decision_reason=decision_reason,
+                batch_id=batch_id,
+                external_message_id=external_message_id,
+            )
+            audit_payload = {
+                "score": composite_score,
+                "classification": classification,
+            }
+            if batch_id:
+                audit_payload["batch_id"] = batch_id
+            if external_message_id:
+                audit_payload["external_message_id"] = external_message_id
+            self.db.log_action(
+                intake_id=intake_id,
+                action="analysis_completed",
+                actor=actor,
+                payload=audit_payload,
+            )
 
-        self.db.save_case(
-            intake_id=intake_id,
-            raw_text=intake.text,
-            classification=classification,
-            composite_score=composite_score,
-            metadata=intake.dict().get("metadata", {}) or {},
-            breakdown=breakdown.dict(),
-            provenance=provenance.dict(),
-            summary=summary_text,
-            decision_reason=decision_reason,
-        )
-        self.db.log_action(
-            intake_id=intake_id,
-            action="analysis_completed",
-            actor="system",
-            payload={"score": composite_score, "classification": classification},
-        )
+            # Store fingerprint for post-hoc verification
+            try:
+                self.db.store_fingerprint(intake_id, intake.text, provenance.content_hash)
+            except Exception:
+                # non-fatal; continue
+                pass
 
-        # Store fingerprint for post-hoc verification
-        try:
-            self.db.store_fingerprint(intake_id, intake.text, provenance.content_hash)
-        except Exception:
-            # non-fatal; continue
-            pass
+        if graph_summary is None:
+            # Replaced with one post-batch snapshot by _process_batch_sync.
+            graph_summary = self.graph.summary() if summarize_graph else {
+                "node_count": 0,
+                "edge_count": 0,
+                "high_risk_actors": [],
+                "communities": [],
+            }
 
         result = DetectionResult(
             intake_id=intake_id,
@@ -104,6 +231,8 @@ class AnalysisOrchestrator:
                 "score": composite_score,
                 "classification": classification,
                 "submitted_at": submitted_at.isoformat(),
+                "batch_id": batch_id,
+                "external_message_id": external_message_id,
             }
         )
         return result

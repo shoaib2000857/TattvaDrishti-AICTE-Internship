@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import MetricCard from "@/components/MetricCard";
 import IntakeForm from "@/components/IntakeForm";
+import BatchUpload from "@/components/BatchUpload";
 import EventsFeed from "@/components/EventsFeed";
 import CaseTable from "@/components/CaseTable";
 import CaseDetail from "@/components/CaseDetail";
@@ -146,6 +147,18 @@ export default function HomePage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleBatchComplete = (batch) => {
+    const completed = (batch.items || [])
+      .filter((item) => item.status === "success" && item.result)
+      .map((item) => item.result);
+    completed.forEach(upsertResult);
+    if (completed[0]?.intake_id) setSelectedId(completed[0].intake_id);
+    setToast({
+      message: `Batch complete: ${batch.succeeded} processed, ${batch.failed} failed.`,
+      tone: batch.failed ? "error" : "success",
+    });
   };
 
   const handleSelectCase = async (intakeId) => {
@@ -314,6 +327,10 @@ export default function HomePage() {
                 onValidationError={(message) =>
                   setToast({ message, tone: "error" })
                 }
+              />
+              <BatchUpload
+                onComplete={handleBatchComplete}
+                onError={(message) => setToast({ message, tone: "error" })}
               />
               <CaseTable
                 results={results}

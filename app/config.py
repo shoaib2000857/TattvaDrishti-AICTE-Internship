@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     ollama_timeout: int = Field(30, env="OLLAMA_TIMEOUT")
     ollama_prompt_chars: int = Field(2000, env="OLLAMA_PROMPT_CHARS")
     ollama_timeout_ceiling: int = Field(90, env="OLLAMA_TIMEOUT_CEILING")
+
+    # Batch ingestion. Limits are deliberately bounded so one upload cannot
+    # monopolise a worker or exhaust model memory.
+    batch_max_records: int = Field(5000, env="BATCH_MAX_RECORDS")
+    batch_max_file_bytes: int = Field(25 * 1024 * 1024, env="BATCH_MAX_FILE_BYTES")
+    batch_parallelism: int = Field(4, env="BATCH_PARALLELISM")
+    batch_ai_model_size: int = Field(16, env="BATCH_AI_MODEL_SIZE")
+    batch_ollama_parallelism: int = Field(2, env="BATCH_OLLAMA_PARALLELISM")
     
     # Federated Blockchain Configuration
     federated_encryption_key: str = Field("LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=", env="BLOCK_ENCRYPTION_KEY")
