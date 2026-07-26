@@ -181,7 +181,13 @@ export default function HomePage() {
       setSharePending(true);
       const packagePayload = await requestSharingPackage(payload);
       setShareOutput(JSON.stringify(packagePayload, null, 2));
-      setToast({ message: "Sharing package generated.", tone: "success" });
+      setToast({
+        message:
+          packagePayload.transfer_status === "delivered"
+            ? "Package encrypted and delivered."
+            : "Secure package prepared for delivery.",
+        tone: "success",
+      });
     } catch (error) {
       setToast({
         message: error.message || "Unable to generate sharing package.",
@@ -227,14 +233,7 @@ export default function HomePage() {
 
   return (
     <>
-      <main
-        className="
-          relative min-h-screen pb-20
-          overflow-x-hidden       // 💡 ADDED — stops horizontal scroll
-          break-words             // 💡 ADDED — wrap long words
-          break-all               // 💡 ADDED — extreme long strings
-        "
-      >
+      <main className="relative min-h-screen w-full max-w-full overflow-x-clip pb-20">
         {/* Colored glows */}
         <div
           className="absolute -left-32 top-20 h-72 w-72 rounded-full bg-emerald-500/40 blur-3xl opacity-30"
@@ -319,9 +318,9 @@ export default function HomePage() {
           </div>
         </header>
 
-        <section className="relative z-10 mx-auto max-w-7xl px-6 py-12 break-words">
-          <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1.7fr_1fr] break-words">
-            <div className="flex flex-col gap-8 break-all">
+        <section className="relative z-10 mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
+          <div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]">
+            <div className="flex min-w-0 flex-col gap-8">
               <SocialIngestPanel />
               <IntakeForm
                 onSubmit={handleSubmitIntake}
@@ -341,11 +340,13 @@ export default function HomePage() {
               />
             </div>
 
-            <ImageAnalyzer />
-            <EventsFeed events={events} />
+            <div className="flex min-w-0 flex-col gap-8">
+              <ImageAnalyzer />
+              <EventsFeed events={events} />
+            </div>
           </div>
 
-          <div className="mt-12 grid grid-cols-1 gap-8 xl:grid-cols-[1.4fr] break-all">
+          <div className="mt-12 grid min-w-0 grid-cols-1 gap-8">
             <CaseDetail
               caseData={selectedCase}
               submission={submissionPayload}
@@ -364,7 +365,7 @@ export default function HomePage() {
             <HopTraceMap />
           </div>
 
-          <div className="mt-12 break-all">
+          <div className="mt-12 min-w-0 overflow-hidden">
             <WorldHeatmapLeaflet />
           </div>
         </section>

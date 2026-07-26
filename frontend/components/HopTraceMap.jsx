@@ -195,7 +195,7 @@ export default function HopTraceMap({ sharePackage = null }) {
   }
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-black/40">
+    <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 p-4 shadow-2xl shadow-black/40 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-[10px] uppercase tracking-[0.4em] text-emerald-300">
@@ -218,14 +218,14 @@ export default function HopTraceMap({ sharePackage = null }) {
         )}
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_0.85fr]">
+      <div className="mt-6 grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,0.85fr)]">
         <div
           ref={containerRef}
           style={{ height: 420, borderRadius: 18, overflow: "hidden" }}
-          className="w-full bg-white"
+          className="min-w-0 w-full bg-white"
         />
 
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
           <div className="rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-3 text-sm text-slate-300">
             Estimated travel time:{" "}
             <span className="font-semibold text-white">
@@ -235,7 +235,7 @@ export default function HopTraceMap({ sharePackage = null }) {
           {hops.map((hop, index) => (
             <article
               key={hop.id}
-              className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-4"
+              className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-4"
             >
               <div className="flex items-center justify-between text-xs text-slate-400">
                 <span>Hop {index + 1}</span>
@@ -246,7 +246,7 @@ export default function HopTraceMap({ sharePackage = null }) {
               <p className="mt-2 text-base font-semibold text-white">
                 {hop.name}
               </p>
-              <p className="text-sm text-slate-300">
+              <p className="break-words text-sm text-slate-300">
                 {hop.city} · {hop.ip}
               </p>
               <p className="text-xs text-slate-400 mt-1">

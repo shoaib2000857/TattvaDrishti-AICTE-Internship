@@ -58,7 +58,7 @@ class AIDetector:
         self._loaded_ai_human_model_id = None
         
         # Skip model loading if disabled (e.g., in Docker blockchain nodes)
-        if os.getenv("DISABLE_AI_MODELS", "false").lower() == "true":
+        if self.settings and self.settings.disable_ai_models:
             logger.warning("⚠️  AI model loading disabled via DISABLE_AI_MODELS env var")
             self._device = "cpu"
             return

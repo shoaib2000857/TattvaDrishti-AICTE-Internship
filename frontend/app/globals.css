@@ -6,7 +6,19 @@
   color-scheme: dark;
 }
 
+html {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
+  overflow-x: clip;
+  overflow-y: auto;
+}
+
 body {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  overflow-x: clip;
   @apply bg-slate-950 text-slate-100 antialiased;
 }
 

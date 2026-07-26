@@ -73,12 +73,14 @@ instance/
 # dotenv
 .env
 .env.*
+!.env.example
 
 # Frontend environment files
 frontend/.env.local
 frontend/.env.development.local
 frontend/.env.test.local
 frontend/.env.production.local
+!frontend/.env.local.example
 
 # VS Code
 .vscode/

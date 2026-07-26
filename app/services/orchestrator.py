@@ -1,5 +1,4 @@
 import asyncio
-import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -14,6 +13,7 @@ from ..models.sharing import SharingEngine
 from ..models.watermark import WatermarkEngine
 from ..schemas import ContentIntake, DetectionResult, SharingPackage, SharingRequest
 from ..storage.database import Database
+from ..federated.secure_transfer import SecureTransferService
 
 try:
     from ..federated.manager import LedgerManager
@@ -31,6 +31,7 @@ class AnalysisOrchestrator:
         self.watermark = WatermarkEngine()
         self.graph = GraphIntelEngine()
         self.sharing = SharingEngine()
+        self.secure_transfer = SecureTransferService()
         self.db = Database()
         self._event_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=200)
         # NetworkX mutation and SQLite writes are ordered. Expensive detector
@@ -247,9 +248,9 @@ class AnalysisOrchestrator:
 
     async def _fetch_case_from_main_api(self, intake_id: str) -> Optional[Dict[str, Any]]:
         """Fetch case data from main API if not found locally (for federated nodes)."""
-        main_api_url = os.getenv("MAIN_API_URL", "http://localhost:8000")
+        main_api_url = self.detector.settings.main_api_url
         # Don't fetch from self
-        if main_api_url == os.getenv("NODE_URL"):
+        if main_api_url == self.detector.settings.node_url:
             return None
         
         try:
@@ -300,15 +301,72 @@ class AnalysisOrchestrator:
             policy_tags=policy_tags,
             risk_level=classification,
             composite_score=composite_score,
+            transfer_mode=request.transfer_mode,
         )
         self.db.log_action(
             intake_id=request.intake_id,
             action="package_generated",
             actor="system",
-            payload={"destination": request.destination, "policy": policy_tags},
+            payload={
+                "destination": request.destination,
+                "policy": policy_tags,
+                "transfer_mode": request.transfer_mode,
+            },
         )
-        
-        # Publish to federated blockchain if enabled
+
+        if request.transfer_mode == "encrypted":
+            envelope = self.secure_transfer.create_envelope(
+                package_id=package.package_id,
+                destination=request.destination,
+                payload=package.model_dump(mode="json"),
+            )
+            self.db.save_secure_outbox(
+                envelope_id=envelope.envelope_id,
+                package_id=package.package_id,
+                intake_id=request.intake_id,
+                destination=request.destination,
+                envelope=envelope.model_dump(mode="json"),
+            )
+            status, receipt, transport_detail = await self.secure_transfer.deliver(envelope)
+            self.db.update_secure_outbox_status(envelope.envelope_id, status)
+            package.transfer_status = status
+            package.transport_security = (
+                transport_detail
+                if status == "delivered" and transport_detail
+                else "AES-256-GCM authenticated envelope; TLS 1.3 required for production delivery"
+            )
+            package.security = {
+                "algorithm": envelope.algorithm,
+                "key_id": envelope.key_id,
+                "envelope_id": envelope.envelope_id,
+                "expires_at": envelope.expires_at.isoformat(),
+                "ciphertext_sha256": envelope.ciphertext_sha256,
+                "signature_algorithm": "Ed25519",
+                "ciphertext_preview": f"{envelope.ciphertext[:72]}…",
+                "delivery_note": transport_detail,
+                "receipt": receipt.model_dump(mode="json") if receipt else None,
+            }
+            self.db.log_action(
+                intake_id=request.intake_id,
+                action="secure_transfer_prepared",
+                actor="system",
+                payload={
+                    "destination": request.destination,
+                    "envelope_id": envelope.envelope_id,
+                    "status": status,
+                    "ciphertext_sha256": envelope.ciphertext_sha256,
+                },
+            )
+            return package
+
+        package.transfer_status = "prepared"
+        package.security = {
+            "mode": "demonstration",
+            "encryption": "Fernet encrypted ledger payload",
+            "integrity": "Ed25519 signed block",
+        }
+
+        # Publish only when the explicitly selected blockchain demo is enabled.
         if self.ledger and self.node:
             try:
                 # Map destination to node URL (hardcoded to match NODE_URLS in frontend)
@@ -370,6 +428,7 @@ class AnalysisOrchestrator:
                             )
                             
                             if block_response.status_code == 200:
+                                package.transfer_status = "delivered"
                                 print(f"✓ Block sent successfully to {request.destination} node")
                             else:
                                 print(f"✗ Failed to send block to {request.destination}: {block_response.status_code} - {block_response.text}")

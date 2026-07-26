@@ -8,27 +8,37 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     app_name: str = "LLM MalignOps Shield"
-    environment: str = Field("dev", env="APP_ENV")
-    secret_key: str = Field("super-secret-key", env="APP_SECRET")
+    environment: str = Field("dev", validation_alias="APP_ENV")
+    secret_key: str = Field("super-secret-key", validation_alias="APP_SECRET")
     database_url: str = Field("sqlite:///./data/app.db", env="DATABASE_URL")
     allowed_origins: List[str] = Field(default_factory=lambda: ["*"])
     sharing_allowed_regions: List[str] = Field(
         default_factory=lambda: ["USA", "EU", "IN", "AUS"]
     )
-    watermark_secret: str = Field("default-watermark-seed", env="WATERMARK_SEED")
+    watermark_secret: str = Field(
+        "default-watermark-seed",
+        validation_alias="WATERMARK_SEED",
+    )
     # Hugging Face AI Detection
     hf_model_name: str = Field("disabled", env="HF_MODEL_NAME")
     hf_tokenizer_name: str = Field("disabled", env="HF_TOKENIZER_NAME")
     hf_device: int = Field(-1, env="HF_DEVICE")  # -1 CPU, >=0 GPU id
     hf_score_threshold: float = Field(0.6, env="HF_SCORE_THRESHOLD")
+    disable_ai_models: bool = Field(False, env="DISABLE_AI_MODELS")
     
     # Ollama Configuration (for semantic risk analysis)
-    ollama_model: str = Field("llama3.2:3b", env="OLLAMA_MODEL")  # Lightweight and efficient
+    ollama_model: str = Field("qwen2.5:7b", env="OLLAMA_MODEL")
     ollama_enabled: bool = Field(True, env="OLLAMA_ENABLED")  # Enable by default
     ollama_host: str = Field("http://localhost:11434", env="OLLAMA_HOST")
     ollama_timeout: int = Field(30, env="OLLAMA_TIMEOUT")
     ollama_prompt_chars: int = Field(2000, env="OLLAMA_PROMPT_CHARS")
     ollama_timeout_ceiling: int = Field(90, env="OLLAMA_TIMEOUT_CEILING")
+    ollama_keep_alive: str = Field("10m", env="OLLAMA_KEEP_ALIVE")
+    ollama_num_ctx: int = Field(4096, env="OLLAMA_NUM_CTX")
+    ollama_num_predict: int = Field(280, env="OLLAMA_NUM_PREDICT")
+    ollama_temperature: float = Field(0.1, env="OLLAMA_TEMPERATURE")
+    ollama_micro_batch_size: int = Field(4, env="OLLAMA_MICRO_BATCH_SIZE")
+    ollama_micro_batch_chars: int = Field(8000, env="OLLAMA_MICRO_BATCH_CHARS")
 
     # Batch ingestion. Limits are deliberately bounded so one upload cannot
     # monopolise a worker or exhaust model memory.
@@ -36,20 +46,44 @@ class Settings(BaseSettings):
     batch_max_file_bytes: int = Field(25 * 1024 * 1024, env="BATCH_MAX_FILE_BYTES")
     batch_parallelism: int = Field(4, env="BATCH_PARALLELISM")
     batch_ai_model_size: int = Field(16, env="BATCH_AI_MODEL_SIZE")
-    batch_ollama_parallelism: int = Field(2, env="BATCH_OLLAMA_PARALLELISM")
+    batch_ollama_parallelism: int = Field(1, env="BATCH_OLLAMA_PARALLELISM")
+
+    # Routine inter-node sharing. Payloads are protected with AES-256-GCM even
+    # when a development node is temporarily unavailable. Production nodes
+    # should expose HTTPS endpoints and set SECURE_TRANSFER_REQUIRE_TLS=true.
+    secure_transfer_key: str = Field(
+        "LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=",
+        env="SECURE_TRANSFER_KEY",
+    )
+    secure_transfer_key_id: str = Field("tattvadrishti-demo-key-v1", env="SECURE_TRANSFER_KEY_ID")
+    secure_transfer_node_id: str = Field("analyst-node", env="SECURE_TRANSFER_NODE_ID")
+    secure_transfer_nodes: str = Field(
+        "USA=http://localhost:8001,EU=http://localhost:8002,"
+        "IN=http://localhost:8003,AUS=http://localhost:8004",
+        env="SECURE_TRANSFER_NODES",
+    )
+    secure_transfer_require_tls: bool = Field(False, env="SECURE_TRANSFER_REQUIRE_TLS")
+    secure_transfer_verify_tls: bool = Field(True, env="SECURE_TRANSFER_VERIFY_TLS")
+    secure_transfer_timeout: int = Field(8, env="SECURE_TRANSFER_TIMEOUT")
+    secure_transfer_ttl_seconds: int = Field(300, env="SECURE_TRANSFER_TTL_SECONDS")
     
     # Federated Blockchain Configuration
-    federated_encryption_key: str = Field("LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=", env="BLOCK_ENCRYPTION_KEY")
+    federated_encryption_key: str = Field(
+        "LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=",
+        validation_alias="BLOCK_ENCRYPTION_KEY",
+    )
     federated_nodes: str = Field("http://localhost:8000,http://localhost:8001,http://localhost:8002,http://localhost:8003,http://localhost:8004", env="FEDERATED_NODES")
     
     # Sightengine Image Detection API
-    sightengine_api_user: str = Field("907314243", env="SIGHTENGINE_API_USER")
-    sightengine_api_secret: str = Field("B6S8o9JwQg9B3pv5ppo8BgLNA2gyweh3", env="SIGHTENGINE_API_SECRET")
+    sightengine_api_user: str = Field("", env="SIGHTENGINE_API_USER")
+    sightengine_api_secret: str = Field("", env="SIGHTENGINE_API_SECRET")
     node_url: str = Field("http://localhost:8000", env="NODE_URL")
+    main_api_url: str = Field("http://localhost:8000", env="MAIN_API_URL")
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache(maxsize=1)

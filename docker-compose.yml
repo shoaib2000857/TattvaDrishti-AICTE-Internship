@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   node1:
     build: .
@@ -8,7 +6,11 @@ services:
       NODE_URL: "http://node1:8000"
       MAIN_API_URL: "http://host.docker.internal:8000"
       FEDERATED_NODES: "http://node1:8000,http://node2:8000,http://node3:8000,http://node4:8000"
-      BLOCK_ENCRYPTION_KEY: "LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM="
+      BLOCK_ENCRYPTION_KEY: "${BLOCK_ENCRYPTION_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY: "${SECURE_TRANSFER_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY_ID: "${SECURE_TRANSFER_KEY_ID:-tattvadrishti-demo-key-v1}"
+      SECURE_TRANSFER_NODE_ID: "partner-node-usa"
+      SECURE_TRANSFER_NODES: "USA=http://node1:8000,EU=http://node2:8000,IN=http://node3:8000,AUS=http://node4:8000"
       APP_SECRET: "federated-secret-node1"
       DISABLE_AI_MODELS: "true"
     volumes:
@@ -25,7 +27,11 @@ services:
       NODE_URL: "http://node2:8000"
       MAIN_API_URL: "http://host.docker.internal:8000"
       FEDERATED_NODES: "http://node1:8000,http://node2:8000,http://node3:8000,http://node4:8000"
-      BLOCK_ENCRYPTION_KEY: "LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM="
+      BLOCK_ENCRYPTION_KEY: "${BLOCK_ENCRYPTION_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY: "${SECURE_TRANSFER_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY_ID: "${SECURE_TRANSFER_KEY_ID:-tattvadrishti-demo-key-v1}"
+      SECURE_TRANSFER_NODE_ID: "partner-node-eu"
+      SECURE_TRANSFER_NODES: "USA=http://node1:8000,EU=http://node2:8000,IN=http://node3:8000,AUS=http://node4:8000"
       APP_SECRET: "federated-secret-node2"
       DISABLE_AI_MODELS: "true"
     volumes:
@@ -42,7 +48,11 @@ services:
       NODE_URL: "http://node3:8000"
       MAIN_API_URL: "http://host.docker.internal:8000"
       FEDERATED_NODES: "http://node1:8000,http://node2:8000,http://node3:8000,http://node4:8000"
-      BLOCK_ENCRYPTION_KEY: "LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM="
+      BLOCK_ENCRYPTION_KEY: "${BLOCK_ENCRYPTION_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY: "${SECURE_TRANSFER_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY_ID: "${SECURE_TRANSFER_KEY_ID:-tattvadrishti-demo-key-v1}"
+      SECURE_TRANSFER_NODE_ID: "partner-node-in"
+      SECURE_TRANSFER_NODES: "USA=http://node1:8000,EU=http://node2:8000,IN=http://node3:8000,AUS=http://node4:8000"
       APP_SECRET: "federated-secret-node3"
       DISABLE_AI_MODELS: "true"
     volumes:
@@ -59,7 +69,11 @@ services:
       NODE_URL: "http://node4:8000"
       MAIN_API_URL: "http://host.docker.internal:8000"
       FEDERATED_NODES: "http://node1:8000,http://node2:8000,http://node3:8000,http://node4:8000"
-      BLOCK_ENCRYPTION_KEY: "LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM="
+      BLOCK_ENCRYPTION_KEY: "${BLOCK_ENCRYPTION_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY: "${SECURE_TRANSFER_KEY:-LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=}"
+      SECURE_TRANSFER_KEY_ID: "${SECURE_TRANSFER_KEY_ID:-tattvadrishti-demo-key-v1}"
+      SECURE_TRANSFER_NODE_ID: "partner-node-aus"
+      SECURE_TRANSFER_NODES: "USA=http://node1:8000,EU=http://node2:8000,IN=http://node3:8000,AUS=http://node4:8000"
       APP_SECRET: "federated-secret-node4"
       DISABLE_AI_MODELS: "true"
     volumes:

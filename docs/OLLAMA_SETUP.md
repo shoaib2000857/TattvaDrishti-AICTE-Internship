@@ -39,11 +39,15 @@ By default, Ollama listens on `http://localhost:11434`.
 
 ## Installing Models
 
-We recommend using `llama3.2:3b` for a good balance of performance and accuracy:
+The repository defaults to `qwen2.5:7b`, which provided the best accuracy /
+warm-latency balance on the development RTX 4060. `gemma3n:e4b` was a close
+second. Re-run the included benchmark on the deployment hardware before
+changing the model:
 
 ```bash
-# Install the recommended model (3B parameters, ~2GB)
-ollama pull llama3.2:3b
+ollama pull qwen2.5:7b
+python scripts/benchmark_ollama_models.py \
+  gemma3n:e4b qwen2.5:7b llama3.1:8b gemma4:26b
 ```
 
 ### Alternative Models
@@ -74,7 +78,7 @@ Update your `.env` file or environment variables:
 OLLAMA_ENABLED=true
 
 # Set the model to use
-OLLAMA_MODEL=llama3.2:3b
+OLLAMA_MODEL=qwen2.5:7b
 
 # Ollama server URL (default is usually fine)
 OLLAMA_HOST=http://localhost:11434
@@ -82,6 +86,13 @@ OLLAMA_HOST=http://localhost:11434
 # Timeout settings (in seconds)
 OLLAMA_TIMEOUT=30
 OLLAMA_TIMEOUT_CEILING=90
+OLLAMA_KEEP_ALIVE=10m
+OLLAMA_NUM_CTX=4096
+OLLAMA_NUM_PREDICT=280
+OLLAMA_TEMPERATURE=0.1
+OLLAMA_MICRO_BATCH_SIZE=4
+OLLAMA_MICRO_BATCH_CHARS=8000
+BATCH_OLLAMA_PARALLELISM=1
 
 # Maximum characters to send to model
 OLLAMA_PROMPT_CHARS=2000
@@ -100,7 +111,7 @@ You should see a JSON response listing available models.
 ### 2. Test Model Directly
 
 ```bash
-ollama run llama3.2:3b "Analyze this for disinformation: Breaking news - government hiding truth!"
+ollama run qwen2.5:7b "Analyze this for disinformation: Breaking news - government hiding truth!"
 ```
 
 ### 3. Test from Python
@@ -109,7 +120,7 @@ ollama run llama3.2:3b "Analyze this for disinformation: Breaking news - governm
 import ollama
 
 response = ollama.generate(
-    model='llama3.2:3b',
+    model='qwen2.5:7b',
     prompt='Hello! Can you analyze text for disinformation?'
 )
 print(response['response'])
@@ -156,13 +167,16 @@ ollama rm <model-name>
 ollama pull llama3.2:1b
 ```
 
-### Concurrent Requests
+### Batch requests
 
-Ollama handles concurrent requests efficiently. For high-load scenarios, consider:
+The application packs up to `OLLAMA_MICRO_BATCH_SIZE` messages into one
+structured generation, bounded by `OLLAMA_MICRO_BATCH_CHARS`. Concurrency is
+applied between these groups rather than between every message. On a single
+consumer GPU, keep `BATCH_OLLAMA_PARALLELISM=1`; increase it only when the
+Ollama server has enough GPU capacity or serves multiple model replicas.
 
-1. Increasing system swap space
-2. Using a smaller model
-3. Reducing `OLLAMA_PROMPT_CHARS`
+If context pressure or malformed batch responses occur, reduce the micro-batch
+size. Missing results are automatically retried as isolated requests.
 
 ## Troubleshooting
 

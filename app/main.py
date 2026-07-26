@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Optional
 
@@ -19,6 +19,8 @@ from .schemas import (
     DetectionResult,
     SharingPackage,
     SharingRequest,
+    SecureTransferEnvelope,
+    SecureTransferReceipt,
     SIEMCorrelationPayload,
     ThreatIntelFeed,
 )
@@ -34,6 +36,7 @@ from .federated.manager import LedgerManager
 from .federated.node import Node
 from .federated.ledger import Block
 from .federated.crypto import encrypt_data, decrypt_data, sha256
+from .federated.secure_transfer import SecureTransferError
 from .heatmap import router as heatmap_router, record_point
 from .auth.middleware import role_protection
 from .ingest.router import router as ingest_router
@@ -266,6 +269,58 @@ async def request_sharing_package(request_payload: SharingRequest) -> SharingPac
         return await orchestrator.build_sharing_package(request_payload)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.post(
+    "/api/v1/secure-transfer/receive",
+    response_model=SecureTransferReceipt,
+)
+async def receive_secure_transfer(
+    request: Request,
+    envelope: SecureTransferEnvelope,
+) -> SecureTransferReceipt:
+    """Verify, decrypt, and acknowledge an authenticated partner envelope."""
+    forwarded_protocol = request.headers.get("x-forwarded-proto", request.url.scheme)
+    protocol = forwarded_protocol.split(",", 1)[0].strip().lower()
+    client_host = request.client.host if request.client else ""
+    is_local = client_host in {"127.0.0.1", "::1", "localhost"}
+    if settings.secure_transfer_require_tls and protocol != "https" and not is_local:
+        raise HTTPException(
+            status_code=426,
+            detail="TLS 1.3 transport is required for secure-transfer reception.",
+        )
+    try:
+        payload = orchestrator.secure_transfer.decrypt_envelope(envelope)
+    except SecureTransferError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    accepted = database_l1.record_secure_transfer(
+        envelope_id=envelope.envelope_id,
+        package_id=envelope.package_id,
+        source_node=envelope.source_node,
+        destination=envelope.destination,
+        ciphertext_sha256=envelope.ciphertext_sha256,
+    )
+    intake_id = str(payload.get("payload", {}).get("intake_id") or envelope.package_id)
+    database_l1.log_action(
+        intake_id=intake_id,
+        action="secure_transfer_received" if accepted else "secure_transfer_replayed",
+        actor=envelope.source_node,
+        payload={
+            "envelope_id": envelope.envelope_id,
+            "package_id": envelope.package_id,
+            "destination": envelope.destination,
+            "ciphertext_sha256": envelope.ciphertext_sha256,
+        },
+    )
+    return SecureTransferReceipt(
+        envelope_id=envelope.envelope_id,
+        package_id=envelope.package_id,
+        status="accepted" if accepted else "duplicate",
+        received_at=datetime.now(timezone.utc),
+        receiving_node=settings.secure_transfer_node_id,
+        ciphertext_sha256=envelope.ciphertext_sha256,
+    )
 
 
 @app.get("/api/v1/integrations/threat-intel", response_model=ThreatIntelFeed)

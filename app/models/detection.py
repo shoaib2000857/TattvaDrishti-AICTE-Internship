@@ -110,12 +110,12 @@ class DetectorEngine:
     def detect(self, intake: ContentIntake) -> Tuple[float, str, DetectionBreakdown]:
         prepared = self._prepare_detection(intake)
         ai_result, model_family_result = self._ai_detection(intake.text)
-        ollama_risk = self._ollama_risk_assessment(intake.text)
+        ollama_analysis = self._ollama_analysis(intake.text)
         return self._finalize_detection(
             prepared,
             ai_result=ai_result,
             model_family_result=model_family_result,
-            ollama_risk=ollama_risk,
+            ollama_analysis=ollama_analysis,
         )
 
     def detect_batch(
@@ -145,30 +145,22 @@ class DetectorEngine:
         else:
             ai_results = [(None, None) for _ in intakes]
 
-        llm_workers = max(1, min(int(ollama_parallelism), len(intakes)))
         if self._ollama_client is None:
-            ollama_results: List[Optional[float]] = [None] * len(intakes)
-        elif llm_workers == 1:
-            ollama_results = [
-                self._ollama_risk_assessment(intake.text) for intake in intakes
-            ]
+            ollama_results: List[Optional[Dict]] = [None] * len(intakes)
         else:
-            with ThreadPoolExecutor(max_workers=llm_workers) as executor:
-                ollama_results = list(
-                    executor.map(
-                        self._ollama_risk_assessment,
-                        [intake.text for intake in intakes],
-                    )
-                )
+            ollama_results = self._ollama_client.analyze_batch(
+                [intake.text for intake in intakes],
+                parallelism=ollama_parallelism,
+            )
 
         return [
             self._finalize_detection(
                 item,
                 ai_result=ai_result,
                 model_family_result=family_result,
-                ollama_risk=ollama_risk,
+                ollama_analysis=ollama_analysis,
             )
-            for item, (ai_result, family_result), ollama_risk in zip(
+            for item, (ai_result, family_result), ollama_analysis in zip(
                 prepared, ai_results, ollama_results
             )
         ]
@@ -194,7 +186,7 @@ class DetectorEngine:
         *,
         ai_result: Optional[Dict],
         model_family_result: Optional[Dict],
-        ollama_risk: Optional[float],
+        ollama_analysis: Optional[Dict],
     ) -> Tuple[float, str, DetectionBreakdown]:
         heuristics = prepared.heuristics
         ai_score: Optional[float] = None
@@ -216,6 +208,7 @@ class DetectorEngine:
                     f"Fingerprint matches {model_family} family ({model_family_confidence:.1%} match)."
                 )
 
+        ollama_risk = ollama_analysis.get("risk") if ollama_analysis else None
         if ollama_risk is not None:
             heuristics.append(
                 f"Ollama semantic analysis: {ollama_risk:.1%} risk "
@@ -246,6 +239,7 @@ class DetectorEngine:
                 model_family_result.get("all_probabilities") if model_family_result else None
             ),
             ollama_risk=ollama_risk,
+            ollama_analysis=ollama_analysis,
             stylometric_anomalies={
                 key: round(value, 3) for key, value in prepared.features.items()
             },
@@ -617,7 +611,7 @@ class DetectorEngine:
             return None, None
         return self._ai_detector.analyze_text(text)
 
-    def _ollama_risk_assessment(self, text: str) -> Optional[float]:
+    def _ollama_analysis(self, text: str) -> Optional[Dict]:
         """
         Use Ollama for semantic/contextual risk assessment.
         Returns risk score 0.0-1.0 if available, None otherwise.
@@ -625,7 +619,7 @@ class DetectorEngine:
         if self._ollama_client is None:
             return None
         try:
-            return self._ollama_client.risk_assessment(text)
+            return self._ollama_client.analyze(text)
         except Exception as e:
             logger.warning(f"Ollama risk assessment failed: {e}")
             return None

@@ -97,6 +97,7 @@ class DetectionBreakdown(BaseModel):
     model_family_confidence: Optional[float] = None
     model_family_probabilities: Optional[Dict[str, float]] = None
     ollama_risk: Optional[float] = None
+    ollama_analysis: Optional[Dict[str, Any]] = None
     stylometric_anomalies: Dict[str, float]
     heuristics: List[str]
 
@@ -182,6 +183,7 @@ class SharingRequest(BaseModel):
     destination: str
     justification: str
     include_personal_data: bool = False
+    transfer_mode: Literal["encrypted", "blockchain"] = "encrypted"
 
 
 class HopTrace(BaseModel):
@@ -205,5 +207,36 @@ class SharingPackage(BaseModel):
     hop_trace: Optional[List[HopTrace]] = None
     risk_level: str
     composite_score: float
-    risk_level: str
-    composite_score: float
+    transfer_mode: Literal["encrypted", "blockchain"] = "encrypted"
+    transfer_status: str = "prepared"
+    transport_security: str = "AES-256-GCM"
+    security: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SecureTransferEnvelope(BaseModel):
+    """Opaque, authenticated envelope exchanged between partner nodes."""
+
+    version: Literal["1.0"] = "1.0"
+    envelope_id: str
+    package_id: str
+    source_node: str
+    destination: str
+    created_at: datetime
+    expires_at: datetime
+    algorithm: Literal["AES-256-GCM"] = "AES-256-GCM"
+    key_id: str
+    nonce: str
+    aad: str
+    ciphertext: str
+    ciphertext_sha256: str
+    signing_public_key: str
+    signature: str
+
+
+class SecureTransferReceipt(BaseModel):
+    envelope_id: str
+    package_id: str
+    status: Literal["accepted", "duplicate"]
+    received_at: datetime
+    receiving_node: str
+    ciphertext_sha256: str

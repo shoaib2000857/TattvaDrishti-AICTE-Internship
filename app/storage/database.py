@@ -80,6 +80,32 @@ class Database:
                 )
             """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS secure_transfer_receipts (
+                    envelope_id TEXT PRIMARY KEY,
+                    package_id TEXT NOT NULL,
+                    source_node TEXT NOT NULL,
+                    destination TEXT NOT NULL,
+                    ciphertext_sha256 TEXT NOT NULL,
+                    received_at TEXT NOT NULL
+                )
+            """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS secure_transfer_outbox (
+                    envelope_id TEXT PRIMARY KEY,
+                    package_id TEXT NOT NULL,
+                    intake_id TEXT NOT NULL,
+                    destination TEXT NOT NULL,
+                    envelope_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """
+            )
 
     @contextmanager
     def _cursor(self):
@@ -231,4 +257,81 @@ class Database:
                     json.dumps(payload, default=_json_default),
                     datetime.utcnow().isoformat(),
                 ),
+            )
+
+    def record_secure_transfer(
+        self,
+        *,
+        envelope_id: str,
+        package_id: str,
+        source_node: str,
+        destination: str,
+        ciphertext_sha256: str,
+    ) -> bool:
+        """Persist a replay-resistant receipt; return False for a duplicate."""
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM secure_transfer_receipts WHERE envelope_id=?",
+                (envelope_id,),
+            )
+            if cur.fetchone():
+                return False
+            cur.execute(
+                """
+                INSERT INTO secure_transfer_receipts (
+                    envelope_id, package_id, source_node, destination,
+                    ciphertext_sha256, received_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    envelope_id,
+                    package_id,
+                    source_node,
+                    destination,
+                    ciphertext_sha256,
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+            return True
+
+    def save_secure_outbox(
+        self,
+        *,
+        envelope_id: str,
+        package_id: str,
+        intake_id: str,
+        destination: str,
+        envelope: Dict[str, Any],
+        status: str = "prepared",
+    ) -> None:
+        timestamp = datetime.utcnow().isoformat()
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO secure_transfer_outbox (
+                    envelope_id, package_id, intake_id, destination,
+                    envelope_json, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    envelope_id,
+                    package_id,
+                    intake_id,
+                    destination,
+                    json.dumps(envelope, default=_json_default),
+                    status,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+
+    def update_secure_outbox_status(self, envelope_id: str, status: str) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                UPDATE secure_transfer_outbox
+                SET status=?, updated_at=?
+                WHERE envelope_id=?
+                """,
+                (status, datetime.utcnow().isoformat(), envelope_id),
             )

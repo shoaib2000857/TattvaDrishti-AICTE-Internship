@@ -1,0 +1,7 @@
+{
+  "intake_id": "replace-with-the-intake-id-returned-by-analysis",
+  "destination": "IN",
+  "justification": "Partner fusion cell review of a suspected influence operation",
+  "include_personal_data": false,
+  "transfer_mode": "encrypted"
+}

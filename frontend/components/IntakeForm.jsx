@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 const minCharacters = 20;
+const reverseGeocoderUrl =
+  process.env.NEXT_PUBLIC_REVERSE_GEOCODER_URL ||
+  "https://nominatim.openstreetmap.org/reverse";
 
 const CITIES = [
   "Agartala", "Aizawl", "Ajmer", "Akola", "Aligarh", "Prayagraj (Allahabad) ", "Alwar", "Ambala", "Amravati", "Amritsar",
@@ -65,6 +68,9 @@ export default function IntakeForm({
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
   const [speechError, setSpeechError] = useState("");
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [detectedCoordinates, setDetectedCoordinates] = useState(null);
 
   const isSimple = variant === "simple";
   const isLight = variant === "light" || isSimple;
@@ -166,6 +172,8 @@ export default function IntakeForm({
   }, []);
 
   const handleRegionChange = (value) => {
+    setLocationError("");
+    setDetectedCoordinates(null);
     setRegion(value);
     if (value.trim()) {
       const filtered = CITIES.filter(city =>
@@ -180,9 +188,78 @@ export default function IntakeForm({
   };
 
   const selectCity = (city) => {
+    setLocationError("");
+    setDetectedCoordinates(null);
     setRegion(city);
     setShowRegionSuggestions(false);
     setFilteredCities([]);
+  };
+
+  const handleDetectLocation = () => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationError("Location detection is unavailable in this browser.");
+      return;
+    }
+    setIsLocating(true);
+    setLocationError("");
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        setDetectedCoordinates({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy_meters: Math.round(coords.accuracy),
+        });
+        const fallback = `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`;
+        try {
+          const query = new URLSearchParams({
+            format: "jsonv2",
+            lat: String(coords.latitude),
+            lon: String(coords.longitude),
+            zoom: "10",
+            addressdetails: "1",
+          });
+          const response = await fetch(
+            `${reverseGeocoderUrl}?${query.toString()}`,
+            { headers: { "Accept-Language": navigator.language || "en" } }
+          );
+          if (!response.ok) throw new Error("Reverse lookup failed");
+          const result = await response.json();
+          const address = result.address || {};
+          const detectedRegion =
+            address.city ||
+            address.town ||
+            address.village ||
+            address.municipality ||
+            address.county ||
+            address.state_district ||
+            address.state;
+          setRegion(detectedRegion || fallback);
+          setShowRegionSuggestions(false);
+          setFilteredCities([]);
+          if (!detectedRegion) {
+            setLocationError("City lookup was unavailable; coordinates were used.");
+          }
+        } catch {
+          setRegion(fallback);
+          setShowRegionSuggestions(false);
+          setFilteredCities([]);
+          setLocationError("City lookup was unavailable; coordinates were used.");
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      (error) => {
+        setIsLocating(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationError("Location permission was denied. Enter a region manually.");
+        } else if (error.code === error.TIMEOUT) {
+          setLocationError("Location request timed out. Please try again.");
+        } else {
+          setLocationError("Your location could not be detected.");
+        }
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+    );
   };
 
   const stopDictation = () => {
@@ -234,6 +311,9 @@ export default function IntakeForm({
         platform: platform.trim() || "unspecified",
         region: region.trim(),
         actor_id: actorId.trim() || null,
+        attributes: detectedCoordinates
+          ? { detected_location: detectedCoordinates }
+          : {},
       },
     };
     const success = await onSubmit(payload);
@@ -247,6 +327,7 @@ export default function IntakeForm({
       setActorId("");
       setTags("");
       setSpeechError("");
+      setDetectedCoordinates(null);
     }
   };
 
@@ -357,6 +438,10 @@ export default function IntakeForm({
               handleRegionChange={handleRegionChange}
               selectCity={selectCity}
               inputClass={inputClass}
+              isLight={isLight}
+              isLocating={isLocating}
+              locationError={locationError}
+              onDetectLocation={handleDetectLocation}
             />
           </InputField>
         )}
@@ -430,6 +515,10 @@ export default function IntakeForm({
             handleRegionChange={handleRegionChange}
             selectCity={selectCity}
             inputClass={inputClass}
+            isLight={isLight}
+            isLocating={isLocating}
+            locationError={locationError}
+            onDetectLocation={handleDetectLocation}
           />
         </InputField>
         <InputField label="Actor ID" variant={variant} emphasis={metadataLabelEmphasis}>
@@ -511,6 +600,10 @@ function RegionInput({
   handleRegionChange,
   selectCity,
   inputClass,
+  isLight,
+  isLocating,
+  locationError,
+  onDetectLocation,
 }) {
   return (
     <div ref={regionInputRef} className="relative">
@@ -528,6 +621,27 @@ function RegionInput({
         className={inputClass}
         autoComplete="off"
       />
+      <button
+        type="button"
+        onClick={onDetectLocation}
+        disabled={isLocating}
+        className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60 ${
+          isLight
+            ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            : "border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20"
+        }`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M10 2v2M10 16v2M2 10h2M16 10h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        {isLocating ? "Detecting location…" : "Use my location"}
+      </button>
+      {locationError ? (
+        <p className={`mt-2 text-xs ${isLight ? "text-amber-700" : "text-amber-300"}`}>
+          {locationError}
+        </p>
+      ) : null}
       {showRegionSuggestions && filteredCities.length > 0 && (
         <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
           {filteredCities.map((city) => (

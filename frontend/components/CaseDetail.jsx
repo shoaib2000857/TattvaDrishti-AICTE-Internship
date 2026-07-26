@@ -15,6 +15,7 @@ const defaultShareForm = {
   destination: "USA",
   justification: "Trusted cell requesting rapid alerting on hostile narrative.",
   include_personal_data: false,
+  transfer_mode: "encrypted",
 };
 
 export default function CaseDetail({
@@ -32,6 +33,16 @@ export default function CaseDetail({
     if (!submission?.metadata) return [];
     return Object.entries(submission.metadata).filter(([, value]) => Boolean(value));
   }, [submission]);
+  const sharePackage = useMemo(() => {
+    if (!shareOutput) return null;
+    try {
+      return typeof shareOutput === "string"
+        ? JSON.parse(shareOutput)
+        : shareOutput;
+    } catch {
+      return null;
+    }
+  }, [shareOutput]);
 
   const breakdown = caseData?.breakdown || {};
   const provenance = caseData?.provenance || {};
@@ -135,7 +146,7 @@ export default function CaseDetail({
   };
 
   return (
-    <aside className="flex flex-col gap-8 rounded-3xl border border-white/5 bg-slate-900/80 p-6 shadow-2xl shadow-black/50 backdrop-blur">
+    <aside className="flex min-w-0 max-w-full flex-col gap-8 overflow-hidden rounded-3xl border border-white/5 bg-slate-900/80 p-4 shadow-2xl shadow-black/50 backdrop-blur sm:p-6">
       <header className="flex items-start justify-between gap-3">
         <h2 className="text-2xl font-semibold text-white">Case intelligence</h2>
         <span
@@ -208,6 +219,26 @@ export default function CaseDetail({
         <ScoreBar label="AI Detection probability" value={breakdown.ai_probability} color="bg-cyan-400" />
         {breakdown.ollama_risk !== null && breakdown.ollama_risk !== undefined && (
           <ScoreBar label="Ollama Semantic Risk" value={breakdown.ollama_risk} color="bg-purple-400" />
+        )}
+        {breakdown.ollama_analysis && (
+          <div className="min-w-0 rounded-xl border border-purple-400/20 bg-purple-400/5 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wide">
+              <span className="rounded-full bg-purple-400/15 px-2 py-1 text-purple-200">
+                {breakdown.ollama_analysis.verdict || "review"}
+              </span>
+              <span className="text-slate-400">
+                {String(breakdown.ollama_analysis.claim_status || "unverified").replace(/_/g, " ")}
+              </span>
+              {breakdown.ollama_analysis.model ? (
+                <span className="text-slate-500">· {breakdown.ollama_analysis.model}</span>
+              ) : null}
+            </div>
+            {breakdown.ollama_analysis.rationale ? (
+              <p className="mt-2 break-words text-xs leading-5 text-slate-300">
+                {breakdown.ollama_analysis.rationale}
+              </p>
+            ) : null}
+          </div>
         )}
         {breakdown.model_family && (
           <div className="rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3">
@@ -558,10 +589,62 @@ export default function CaseDetail({
             Generate sharing package
           </h3>
           <p className="mt-1 text-xs text-slate-400">
-            Wrap the analysis into a signed package for partner dissemination directly through the API.
+            Encrypt routine transfers or use the federated ledger as a demonstration.
           </p>
         </div>
         <form className="space-y-4" onSubmit={handleShareSubmit}>
+          <fieldset>
+            <legend className="text-xs uppercase tracking-wide text-slate-400">
+              Transfer method
+            </legend>
+            <div className="mt-2 grid gap-3 md:grid-cols-2">
+              {[
+                {
+                  value: "encrypted",
+                  title: "Secure channel",
+                  description: "AES-256-GCM envelope with TLS 1.3 on HTTPS nodes",
+                },
+                {
+                  value: "blockchain",
+                  title: "Blockchain demo",
+                  description: "Tamper-evident federated ledger demonstration",
+                },
+              ].map((option) => {
+                const selected = formState.transfer_mode === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={`cursor-pointer rounded-2xl border p-4 transition ${
+                      selected
+                        ? "border-emerald-400/60 bg-emerald-400/10"
+                        : "border-white/10 bg-slate-900/60 hover:border-white/20"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="transfer_mode"
+                      value={option.value}
+                      checked={selected}
+                      onChange={(event) =>
+                        setFormState((previous) => ({
+                          ...previous,
+                          transfer_mode: event.target.value,
+                        }))
+                      }
+                      className="sr-only"
+                    />
+                    <span className="block text-sm font-semibold text-slate-100">
+                      {option.title}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-400">
+                      {option.description}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
           <label className="flex flex-col gap-2 text-slate-200">
             <span className="text-xs uppercase tracking-wide text-slate-400">
               Destination
@@ -600,7 +683,25 @@ export default function CaseDetail({
             />
           </label>
 
-        
+          <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={formState.include_personal_data}
+              onChange={(event) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  include_personal_data: event.target.checked,
+                }))
+              }
+              className="mt-0.5 h-4 w-4 accent-emerald-400"
+            />
+            <span>
+              Include personal identifiers
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Leave disabled unless partner policy explicitly permits PII.
+              </span>
+            </span>
+          </label>
 
           <button
             type="submit"
@@ -610,12 +711,34 @@ export default function CaseDetail({
             Build package
           </button>
         </form>
-        {shareOutput ? (
+        {sharePackage ? (
           <>
-            <pre className="max-h-48 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-xs text-slate-300">
-              {shareOutput}
-            </pre>
-            <HopTraceMap sharePackage={shareOutput} />
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ShareResultCard label="Mode" value={sharePackage.transfer_mode} />
+              <ShareResultCard label="Status" value={sharePackage.transfer_status} />
+              <ShareResultCard
+                label="Protection"
+                value={sharePackage.security?.algorithm || sharePackage.transport_security}
+              />
+              <ShareResultCard
+                label="Key ID"
+                value={sharePackage.security?.key_id || "Ledger managed"}
+              />
+            </div>
+            {sharePackage.security?.delivery_note ? (
+              <p className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-xs leading-5 text-cyan-100/80">
+                {sharePackage.security.delivery_note}
+              </p>
+            ) : null}
+            <details className="min-w-0 max-w-full rounded-2xl border border-white/10 bg-slate-950/80">
+              <summary className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                View package JSON
+              </summary>
+              <pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all border-t border-white/10 px-4 py-3 text-xs text-slate-300">
+                {JSON.stringify(sharePackage, null, 2)}
+              </pre>
+            </details>
+            <HopTraceMap sharePackage={sharePackage} />
           </>
         ) : null}
       </section>
@@ -662,6 +785,17 @@ export default function CaseDetail({
         </div>
       )}
     </aside>
+  );
+}
+
+function ShareResultCard({ label, value }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-3">
+      <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-xs font-semibold capitalize text-emerald-200">
+        {String(value || "—").replace(/_/g, " ")}
+      </p>
+    </div>
   );
 }
 

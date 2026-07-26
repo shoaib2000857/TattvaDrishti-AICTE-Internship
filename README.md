@@ -159,8 +159,37 @@ WATERMARK_SEED=your-secret-seed
 HF_MODEL_NAME=roberta-base-openai-detector
 HF_TOKENIZER_NAME=roberta-base-openai-detector
 HF_DEVICE=-1  # -1 for CPU, 0+ for GPU
-OLLAMA_ENABLED=false
-OLLAMA_MODEL=gpt-oss:20b
+OLLAMA_ENABLED=true
+OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_KEEP_ALIVE=10m
+OLLAMA_NUM_CTX=4096
+OLLAMA_MICRO_BATCH_SIZE=4
+OLLAMA_MICRO_BATCH_CHARS=8000
+BATCH_OLLAMA_PARALLELISM=1
+
+# Routine partner transfer (replace this demo key in every real deployment)
+SECURE_TRANSFER_KEY=LULSnIHlBjTSfWDfqVl0kTV9qXUFN0EpGbynAB_34TM=
+SECURE_TRANSFER_KEY_ID=agency-shared-key-v1
+SECURE_TRANSFER_NODE_ID=analyst-node
+SECURE_TRANSFER_NODES=USA=https://usa.example.gov,EU=https://eu.example.gov,IN=https://in.example.gov,AUS=https://aus.example.gov
+SECURE_TRANSFER_REQUIRE_TLS=true
+```
+
+The dashboard defaults to an authenticated AES-256-GCM envelope. HTTPS partner
+endpoints are restricted to TLS 1.3; the blockchain path remains selectable as
+a demonstration. Use a secret manager or HSM-managed 32-byte key in production,
+rotate the key identifier with the key, and never deploy the sample key above.
+
+Example sharing request:
+
+```json
+{
+  "intake_id": "replace-with-a-case-id",
+  "destination": "IN",
+  "justification": "Partner fusion cell review",
+  "include_personal_data": false,
+  "transfer_mode": "encrypted"
+}
 ```
 
 ### Frontend Environment Variables
@@ -169,6 +198,8 @@ The frontend requires `.env.local` (already gitignored):
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+# Use an internal Nominatim-compatible service for sensitive deployments.
+NEXT_PUBLIC_REVERSE_GEOCODER_URL=https://nominatim.openstreetmap.org/reverse
 ```
 
 ---
@@ -185,7 +216,7 @@ pytest
 
 ## Batch message archives
 
-Bulk chat/message collections can be submitted as a versioned JSON envelope or as JSON Lines. The batch path uses vectorized Hugging Face inference, bounded Ollama concurrency, ordered persistence, and per-record error reporting. See [Batch Message Ingestion](docs/BATCH_INGESTION.md) and the files in [`samples/`](samples/).
+Bulk chat/message collections can be submitted as a versioned JSON envelope or as JSON Lines. The batch path uses vectorized Hugging Face inference, bounded Ollama micro-batches, ordered persistence, and per-record error reporting. Ollama groups up to four messages into one structured generation by default and retries only malformed or omitted items individually. See [Batch Message Ingestion](docs/BATCH_INGESTION.md) and the files in [`samples/`](samples/).
 
 ---
 

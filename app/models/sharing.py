@@ -2,7 +2,7 @@ import hashlib
 import json
 import random
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Literal
 from uuid import uuid4
 
 from ..config import get_settings
@@ -57,6 +57,7 @@ class SharingEngine:
         policy_tags: List[str],
         risk_level: str = "low-risk",
         composite_score: float = 0.0,
+        transfer_mode: Literal["encrypted", "blockchain"] = "encrypted",
     ) -> SharingPackage:
         package_id = f"pkg-{uuid4()}"
         created_at = datetime.utcnow()
@@ -79,6 +80,12 @@ class SharingEngine:
             hop_trace=hop_trace,
             risk_level=risk_level,
             composite_score=composite_score,
+            transfer_mode=transfer_mode,
+            transport_security=(
+                "AES-256-GCM + TLS 1.3"
+                if transfer_mode == "encrypted"
+                else "Fernet-encrypted federated ledger demo"
+            ),
         )
 
     def _generate_hop_trace(self, destination: str) -> List[HopTrace]:
