@@ -1,6 +1,11 @@
-import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useRef, useState } from "react";
 import RadarChart from "./RadarChart";
 import HopTraceMap from "./HopTraceMap";
+
+const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
+  ssr: false,
+});
 
 const riskBadgeClasses = {
   "high-risk":
@@ -15,7 +20,6 @@ const defaultShareForm = {
   destination: "USA",
   justification: "Trusted cell requesting rapid alerting on hostile narrative.",
   include_personal_data: false,
-  transfer_mode: "encrypted",
 };
 
 export default function CaseDetail({
@@ -33,16 +37,6 @@ export default function CaseDetail({
     if (!submission?.metadata) return [];
     return Object.entries(submission.metadata).filter(([, value]) => Boolean(value));
   }, [submission]);
-  const sharePackage = useMemo(() => {
-    if (!shareOutput) return null;
-    try {
-      return typeof shareOutput === "string"
-        ? JSON.parse(shareOutput)
-        : shareOutput;
-    } catch {
-      return null;
-    }
-  }, [shareOutput]);
 
   const breakdown = caseData?.breakdown || {};
   const provenance = caseData?.provenance || {};
@@ -59,6 +53,7 @@ export default function CaseDetail({
   const propagationChains = Array.isArray(graphSummary.propagation_chains)
     ? graphSummary.propagation_chains
     : [];
+
   const communitySummaries = useMemo(() => {
     const communities = Array.isArray(graphCommunities) ? graphCommunities : [];
     return communities.map((community) => {
@@ -117,17 +112,14 @@ export default function CaseDetail({
       intake_id: caseData.intake_id,
     };
     
-    // Check if this is a high-risk case
     const classification = (caseData.classification || "").toLowerCase();
     const isHighRisk = classification === "high-risk" || 
                        (typeof caseData.composite_score === "number" && caseData.composite_score >= 0.7);
     
     if (isHighRisk) {
-      // Show warning dialog for high-risk packages
       setPendingShareData(shareData);
       setShowRiskWarning(true);
     } else {
-      // Proceed normally for low/medium risk
       await onShare(shareData);
     }
   };
@@ -146,7 +138,7 @@ export default function CaseDetail({
   };
 
   return (
-    <aside className="flex min-w-0 max-w-full flex-col gap-8 overflow-hidden rounded-3xl border border-white/5 bg-slate-900/80 p-4 shadow-2xl shadow-black/50 backdrop-blur sm:p-6">
+    <aside className="flex flex-col gap-8 rounded-3xl border border-white/5 bg-slate-900/80 p-6 shadow-2xl shadow-black/50 backdrop-blur">
       <header className="flex items-start justify-between gap-3">
         <h2 className="text-2xl font-semibold text-white">Case intelligence</h2>
         <span
@@ -220,26 +212,6 @@ export default function CaseDetail({
         {breakdown.ollama_risk !== null && breakdown.ollama_risk !== undefined && (
           <ScoreBar label="Ollama Semantic Risk" value={breakdown.ollama_risk} color="bg-purple-400" />
         )}
-        {breakdown.ollama_analysis && (
-          <div className="min-w-0 rounded-xl border border-purple-400/20 bg-purple-400/5 px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wide">
-              <span className="rounded-full bg-purple-400/15 px-2 py-1 text-purple-200">
-                {breakdown.ollama_analysis.verdict || "review"}
-              </span>
-              <span className="text-slate-400">
-                {String(breakdown.ollama_analysis.claim_status || "unverified").replace(/_/g, " ")}
-              </span>
-              {breakdown.ollama_analysis.model ? (
-                <span className="text-slate-500">· {breakdown.ollama_analysis.model}</span>
-              ) : null}
-            </div>
-            {breakdown.ollama_analysis.rationale ? (
-              <p className="mt-2 break-words text-xs leading-5 text-slate-300">
-                {breakdown.ollama_analysis.rationale}
-              </p>
-            ) : null}
-          </div>
-        )}
         {breakdown.model_family && (
           <div className="rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-slate-400 mb-2">Model Family Detected</p>
@@ -268,7 +240,6 @@ export default function CaseDetail({
           Stylometric analysis
         </h3>
         <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
-          {/* Stylometric Anomalies - Left */}
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
               Anomalies
@@ -296,7 +267,6 @@ export default function CaseDetail({
             </ul>
           </div>
 
-          {/* Signal Radar - Right */}
           <div className="flex justify-center items-start">
             <RadarChart breakdown={breakdown} />
           </div>
@@ -355,6 +325,7 @@ export default function CaseDetail({
         </ul>
       </section>
 
+      {/* GRAPH INTELLIGENCE SNAPSHOT: Combines Stat Cards, Visual Canvas, AND Community Listings */}
       <section className="rounded-2xl border border-white/10 bg-slate-950/60 px-5 py-5">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
           Graph intelligence snapshot
@@ -368,6 +339,11 @@ export default function CaseDetail({
           />
           <StatCard label="GNN clusters" value={gnnClusters.length} />
         </div>
+        
+        {/* Visual Force-Directed Canvas */}
+        <GraphCanvas graphSummary={graphSummary} />
+
+        {/* Text Community Listings (Re-integrated from incoming) */}
         <div className="mt-4 space-y-2 text-xs text-slate-400">
           {Array.isArray(graphSummary.communities) && graphSummary.communities.length ? (
             graphSummary.communities.map((community, index) => {
@@ -453,6 +429,51 @@ export default function CaseDetail({
           </p>
         )}
       </section>
+
+      {/* SIMILAR MESSAGE CLUSTERS VISUAL CARDS */}
+      {gnnClusters.length > 0 && (
+        <section className="rounded-2xl border border-white/10 bg-slate-950/60 px-5 py-5">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+            Similar message clusters
+          </h3>
+          <div className="mt-4 space-y-4">
+            {gnnClusters.map((cluster) => (
+              <article
+                key={`message-${cluster.cluster_id}`}
+                className="rounded-xl border border-slate-800 bg-gradient-to-b from-slate-900 to-black px-4 py-4 shadow-xl shadow-black/40"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-mono text-xs text-slate-200 tracking-wide">
+                    {cluster.cluster_id}
+                  </p>
+                  <span
+                    className={`rounded-full border px-3 py-1 font-mono text-[11px] shadow ${
+                      getClusterScoreClasses(cluster.score)
+                    }`}
+                  >
+                    {(cluster.score ?? 0).toFixed(2)}
+                  </span>
+                </div>
+                <ClusterPillGroup
+                  label="CONTENT NODES"
+                  items={cluster.content}
+                  pillClassName="bg-cyan-950/70 border-cyan-400/25 text-cyan-100 shadow-cyan-500/10"
+                />
+                <ClusterPillGroup
+                  label="ACTORS"
+                  items={cluster.actors}
+                  pillClassName="bg-rose-950/70 border-rose-400/25 text-rose-100 shadow-rose-500/10"
+                />
+                <ClusterPillGroup
+                  label="NARRATIVES"
+                  items={cluster.narratives}
+                  pillClassName="bg-purple-950/70 border-purple-400/25 text-purple-100 shadow-purple-500/10"
+                />
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-white/10 bg-slate-950/60 px-5 py-5">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
@@ -589,62 +610,10 @@ export default function CaseDetail({
             Generate sharing package
           </h3>
           <p className="mt-1 text-xs text-slate-400">
-            Encrypt routine transfers or use the federated ledger as a demonstration.
+            Wrap the analysis into a signed package for partner dissemination directly through the API.
           </p>
         </div>
         <form className="space-y-4" onSubmit={handleShareSubmit}>
-          <fieldset>
-            <legend className="text-xs uppercase tracking-wide text-slate-400">
-              Transfer method
-            </legend>
-            <div className="mt-2 grid gap-3 md:grid-cols-2">
-              {[
-                {
-                  value: "encrypted",
-                  title: "Secure channel",
-                  description: "AES-256-GCM envelope with TLS 1.3 on HTTPS nodes",
-                },
-                {
-                  value: "blockchain",
-                  title: "Blockchain demo",
-                  description: "Tamper-evident federated ledger demonstration",
-                },
-              ].map((option) => {
-                const selected = formState.transfer_mode === option.value;
-                return (
-                  <label
-                    key={option.value}
-                    className={`cursor-pointer rounded-2xl border p-4 transition ${
-                      selected
-                        ? "border-emerald-400/60 bg-emerald-400/10"
-                        : "border-white/10 bg-slate-900/60 hover:border-white/20"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="transfer_mode"
-                      value={option.value}
-                      checked={selected}
-                      onChange={(event) =>
-                        setFormState((previous) => ({
-                          ...previous,
-                          transfer_mode: event.target.value,
-                        }))
-                      }
-                      className="sr-only"
-                    />
-                    <span className="block text-sm font-semibold text-slate-100">
-                      {option.title}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-400">
-                      {option.description}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-
           <label className="flex flex-col gap-2 text-slate-200">
             <span className="text-xs uppercase tracking-wide text-slate-400">
               Destination
@@ -683,26 +652,6 @@ export default function CaseDetail({
             />
           </label>
 
-          <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={formState.include_personal_data}
-              onChange={(event) =>
-                setFormState((previous) => ({
-                  ...previous,
-                  include_personal_data: event.target.checked,
-                }))
-              }
-              className="mt-0.5 h-4 w-4 accent-emerald-400"
-            />
-            <span>
-              Include personal identifiers
-              <span className="mt-0.5 block text-xs text-slate-500">
-                Leave disabled unless partner policy explicitly permits PII.
-              </span>
-            </span>
-          </label>
-
           <button
             type="submit"
             disabled={sharePending}
@@ -711,34 +660,12 @@ export default function CaseDetail({
             Build package
           </button>
         </form>
-        {sharePackage ? (
+        {shareOutput ? (
           <>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <ShareResultCard label="Mode" value={sharePackage.transfer_mode} />
-              <ShareResultCard label="Status" value={sharePackage.transfer_status} />
-              <ShareResultCard
-                label="Protection"
-                value={sharePackage.security?.algorithm || sharePackage.transport_security}
-              />
-              <ShareResultCard
-                label="Key ID"
-                value={sharePackage.security?.key_id || "Ledger managed"}
-              />
-            </div>
-            {sharePackage.security?.delivery_note ? (
-              <p className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-xs leading-5 text-cyan-100/80">
-                {sharePackage.security.delivery_note}
-              </p>
-            ) : null}
-            <details className="min-w-0 max-w-full rounded-2xl border border-white/10 bg-slate-950/80">
-              <summary className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
-                View package JSON
-              </summary>
-              <pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all border-t border-white/10 px-4 py-3 text-xs text-slate-300">
-                {JSON.stringify(sharePackage, null, 2)}
-              </pre>
-            </details>
-            <HopTraceMap sharePackage={sharePackage} />
+            <pre className="max-h-48 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-xs text-slate-300">
+              {shareOutput}
+            </pre>
+            <HopTraceMap sharePackage={shareOutput} />
           </>
         ) : null}
       </section>
@@ -788,17 +715,6 @@ export default function CaseDetail({
   );
 }
 
-function ShareResultCard({ label, value }) {
-  return (
-    <div className="min-w-0 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-3">
-      <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-xs font-semibold capitalize text-emerald-200">
-        {String(value || "—").replace(/_/g, " ")}
-      </p>
-    </div>
-  );
-}
-
 function ScoreBar({ label, value, color }) {
   const safeValue = typeof value === "number" ? Math.max(0, Math.min(value, 1)) : null;
   return (
@@ -830,6 +746,257 @@ function StatCard({ label, value }) {
   );
 }
 
+function GraphCanvas({ graphSummary }) {
+  const graphRef = useRef(null);
+  const containerRef = useRef(null);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [hoveredNode, setHoveredNode] = useState(null);
+  const [graphWidth, setGraphWidth] = useState(640);
+  const hasZoomedRef = useRef(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    const updateWidth = () => {
+      setGraphWidth(Math.max(container.clientWidth, 320));
+    };
+
+    updateWidth();
+    const resizeObserver = new ResizeObserver(updateWidth);
+    resizeObserver.observe(container);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  const graphData = useMemo(() => {
+    const communities = Array.isArray(graphSummary?.communities)
+      ? graphSummary.communities
+      : [];
+    const nodesById = new Map();
+    const linksById = new Map();
+
+    const addNode = (id, fallbackType, communityIndex) => {
+      if (!id) return;
+      const nodeId = String(id);
+      if (!nodesById.has(nodeId)) {
+        const type = getGraphNodeType(nodeId, fallbackType);
+        nodesById.set(nodeId, {
+          id: nodeId,
+          type,
+          label: getGraphNodeLabel(nodeId),
+          communities: [communityIndex],
+        });
+        return;
+      }
+      nodesById.get(nodeId).communities.push(communityIndex);
+    };
+
+    const addLink = (source, target) => {
+      if (!source || !target) return;
+      const linkId = `${source}->${target}`;
+      if (!linksById.has(linkId)) {
+        linksById.set(linkId, {
+          source: String(source),
+          target: String(target),
+        });
+      }
+    };
+
+    communities.forEach((community, communityIndex) => {
+      const actors = getCommunityValues(community, "actors");
+      const contentNodes = getCommunityValues(community, "content");
+      const narratives = getCommunityValues(community, "narratives");
+
+      actors.forEach((actor) => addNode(actor, "actor", communityIndex));
+      contentNodes.forEach((content) => addNode(content, "content", communityIndex));
+      narratives.forEach((narrative) =>
+        addNode(narrative, "narrative", communityIndex)
+      );
+
+      actors.forEach((actor) => {
+        contentNodes.forEach((content) => addLink(actor, content));
+      });
+      contentNodes.forEach((content) => {
+        narratives.forEach((narrative) => addLink(content, narrative));
+      });
+    });
+
+    return {
+      nodes: Array.from(nodesById.values()),
+      links: Array.from(linksById.values()),
+    };
+  }, [graphSummary]);
+
+  useEffect(() => {
+    hasZoomedRef.current = false;
+    setSelectedNode(null);
+    setHoveredNode(null);
+  }, [graphData]);
+
+  return (
+    <div className="mt-4">
+      <div
+        ref={containerRef}
+        className="h-[280px] w-full overflow-hidden rounded-xl bg-[#020617] shadow-inner shadow-cyan-500/10"
+      >
+        {graphData.nodes.length ? (
+          <ForceGraph2D
+            ref={graphRef}
+            graphData={graphData}
+            width={graphWidth}
+            height={280}
+            backgroundColor="#020617"
+            d3VelocityDecay={0.24}
+            cooldownTicks={90}
+            nodeCanvasObject={(node, ctx, globalScale) =>
+              drawGraphNode(node, ctx, globalScale, hoveredNode?.id === node.id)
+            }
+            nodeLabel={(node) => node.label}
+            nodePointerAreaPaint={(node, color, ctx) => {
+              ctx.fillStyle = color;
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, 10, 0, 2 * Math.PI, false);
+              ctx.fill();
+            }}
+            linkColor={() => "rgba(255, 255, 255, 0.15)"}
+            linkWidth={0.8}
+            onNodeHover={(node) => setHoveredNode(node)}
+            onNodeClick={(node) => setSelectedNode(node)}
+            onEngineStop={() => {
+              if (!hasZoomedRef.current) {
+                graphRef.current?.zoomToFit(500, 36);
+                hasZoomedRef.current = true;
+              }
+            }}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-xs text-slate-500">
+            No graph nodes available for this intake.
+          </div>
+        )}
+      </div>
+      {hoveredNode ? (
+        <div className="mt-3 rounded-xl border border-cyan-400/20 bg-slate-950 px-4 py-2 text-xs text-cyan-100 shadow shadow-cyan-500/10">
+          <span className="mr-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">
+            Hover
+          </span>
+          <span className="font-mono">{hoveredNode.label}</span>
+        </div>
+      ) : null}
+      {selectedNode ? (
+        <div className="mt-3 rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-xs text-slate-300 shadow shadow-purple-500/10">
+          <span className="mr-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">
+            Selected
+          </span>
+          <span className="font-mono text-emerald-200">{selectedNode.id}</span>
+          <span className="mx-2 text-slate-600">/</span>
+          <span className="font-mono text-slate-300">{selectedNode.type}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const graphNodeColors = {
+  actor: "#fb7185",
+  content: "#22d3ee",
+  narrative: "#c084fc",
+};
+
+function getCommunityValues(community, key) {
+  const values = Array.isArray(community?.[key]) ? community[key] : [];
+  return values.filter((value) => value !== null && value !== undefined);
+}
+
+function getGraphNodeType(id, fallbackType) {
+  if (id.startsWith("actor::")) return "actor";
+  if (id.startsWith("content::")) return "content";
+  if (id.startsWith("narrative::")) return "narrative";
+  return fallbackType;
+}
+
+function getGraphNodeLabel(id) {
+  return stripGraphPrefix(id);
+}
+
+function stripGraphPrefix(value) {
+  return String(value).replace(/^(actor|content|narrative)::/, "");
+}
+
+function formatClusterPillValue(value) {
+  return stripGraphPrefix(value).slice(0, 8);
+}
+
+function drawGraphNode(node, ctx, globalScale, isHovered) {
+  const color = graphNodeColors[node.type] || "#e2e8f0";
+  const radius = isHovered ? 7 : 5;
+
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = isHovered ? 24 : 16;
+  ctx.beginPath();
+  ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  ctx.shadowBlur = isHovered ? 34 : 20;
+  ctx.beginPath();
+  ctx.arc(node.x, node.y, radius + 3, 0, 2 * Math.PI, false);
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = isHovered ? 0.55 : 0.28;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.restore();
+
+  if (isHovered) {
+    const fontSize = Math.max(10 / globalScale, 3.5);
+    ctx.save();
+    ctx.font = `${fontSize}px monospace`;
+    ctx.fillStyle = "rgba(226, 232, 240, 0.95)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(2, 6, 23, 0.95)";
+    ctx.shadowBlur = 8;
+    ctx.fillText(node.label, node.x, node.y + radius + 5);
+    ctx.restore();
+  }
+}
+
+function getClusterScoreClasses(score) {
+  const safeScore = typeof score === "number" ? score : 0;
+  if (safeScore > 0.75) {
+    return "border-rose-400/50 bg-rose-500/20 text-rose-100 shadow-rose-500/30";
+  }
+  if (safeScore >= 0.5) {
+    return "border-amber-400/50 bg-amber-500/20 text-amber-100 shadow-amber-500/25";
+  }
+  return "border-emerald-400/50 bg-emerald-500/20 text-emerald-100 shadow-emerald-500/25";
+}
+
+function ClusterPillGroup({ label, items, pillClassName }) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+
+  return (
+    <div className="mt-4">
+      <p className="text-[10px] uppercase tracking-widest text-slate-500">
+        {label}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.map((item, index) => (
+          <span
+            key={`${label}-${item}-${index}`}
+            title={String(item)}
+            className={`rounded-full border px-3 py-1 font-mono text-[11px] shadow ${pillClassName}`}
+          >
+            {formatClusterPillValue(item)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ScoreDial({ value }) {
   const size = 60;
   const strokeWidth = 5;
@@ -837,23 +1004,21 @@ function ScoreDial({ value }) {
   const radius = center - strokeWidth;
   const circumference = 2 * Math.PI * radius;
 
-  // We want the dial to go from 225 degrees to -45 degrees (a 270 degree arc)
   const arcLength = circumference * 0.75;
   const safeValue = Math.max(0, Math.min(value, 1));
   const offset = arcLength - safeValue * arcLength;
   
-  // Determine color based on score
   const scorePercent = safeValue * 100;
   let strokeColor, textColor;
   
   if (scorePercent >= 75) {
-    strokeColor = "rgb(239 68 68)"; // red-500
+    strokeColor = "rgb(239 68 68)";
     textColor = "text-red-300";
   } else if (scorePercent >= 50) {
-    strokeColor = "rgb(249 115 22)"; // orange-500
+    strokeColor = "rgb(249 115 22)";
     textColor = "text-orange-300";
   } else {
-    strokeColor = "rgb(52 211 153)"; // emerald-400
+    strokeColor = "rgb(52 211 153)";
     textColor = "text-emerald-200";
   }
 
