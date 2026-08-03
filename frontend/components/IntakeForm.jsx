@@ -71,6 +71,7 @@ export default function IntakeForm({
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [detectedCoordinates, setDetectedCoordinates] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const isSimple = variant === "simple";
   const isLight = variant === "light" || isSimple;
@@ -347,21 +348,30 @@ export default function IntakeForm({
           <label htmlFor="payload-text" className={labelClass}>
           {isSimple ? "Message or narrative" : "Narrative payload"}
           </label>
-          <button
-            type="button"
-            onClick={handleToggleDictation}
-            disabled={!speechSupported || isSubmitting}
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold tracking-wide transition focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-40 ${
-              isListening ? voiceButtonActiveClass : voiceButtonIdleClass
-            }`}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                isListening ? "bg-rose-300 animate-pulse" : "bg-emerald-300"
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowPreview((current) => !current)}
+              className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-4 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
+            >
+              {showPreview ? "Hide preview" : "Preview"}
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleDictation}
+              disabled={!speechSupported || isSubmitting}
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold tracking-wide transition focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-40 ${
+                isListening ? voiceButtonActiveClass : voiceButtonIdleClass
               }`}
-            />
-            {isListening ? "Stop listening" : "Dictate"}
-          </button>
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isListening ? "bg-rose-300 animate-pulse" : "bg-emerald-300"
+                }`}
+              />
+              {isListening ? "Stop listening" : "Dictate"}
+            </button>
+          </div>
         </div>
         <textarea
           id="payload-text"
@@ -377,6 +387,12 @@ export default function IntakeForm({
           onChange={(event) => setText(event.target.value)}
           className={textareaClass}
         />
+        {showPreview && (
+          <NarrativePreview
+            text={text}
+            onClose={() => setShowPreview(false)}
+          />
+        )}
         <p className="mt-2 flex items-center justify-between gap-4 text-xs text-slate-500">
           <span>
             {isSimple
@@ -564,6 +580,95 @@ export default function IntakeForm({
       </div>
     </form>
   );
+}
+
+function NarrativePreview({ text, onClose }) {
+  const preview = buildNarrativePreview(text);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-2xl shadow-black/60">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">
+              Smart preview
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-white">
+              Narrative readability check
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/10"
+          >
+            Close
+          </button>
+        </div>
+        <div className="overflow-y-auto px-6 py-5">
+          {!preview.hasEnoughContent ? (
+            <p className="rounded-2xl border border-white/10 bg-slate-900/70 px-5 py-4 text-xs leading-relaxed text-slate-500">
+              Not enough content to preview.
+            </p>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-slate-950/80 px-5 py-4 text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">
+              <div className="mb-3 flex flex-wrap gap-4 border-b border-white/10 pb-3 text-[11px] text-slate-500">
+                <span>{preview.wordCount} words</span>
+                <span>{preview.sentenceCount} sentences</span>
+                <span>{preview.readTime} min read</span>
+              </div>
+              <div dangerouslySetInnerHTML={{ __html: preview.html }} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildNarrativePreview(text) {
+  const normalized = text.trim().replace(/\n{3,}/g, "\n\n");
+  const wordCount = normalized ? normalized.split(/\s+/).filter(Boolean).length : 0;
+  const sentenceMatches = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+
+  return {
+    hasEnoughContent: normalized.length >= minCharacters,
+    wordCount,
+    sentenceCount: sentenceMatches.filter((sentence) => sentence.trim()).length,
+    readTime: Math.max(1, Math.ceil(wordCount / 200)),
+    html: highlightNarrativeSentences(normalized),
+  };
+}
+
+function highlightNarrativeSentences(text) {
+  const parts = text.match(/[^.!?]+[.!?]+[\])'"`’”]*\s*|[^.!?]+$/g) || [];
+  return parts
+    .map((part) => {
+      const trailingWhitespace = part.match(/\s+$/)?.[0] || "";
+      const sentence = trailingWhitespace ? part.slice(0, -trailingWhitespace.length) : part;
+      const escapedSentence = escapeHtml(sentence);
+      const escapedWhitespace = escapeHtml(trailingWhitespace);
+      const hasAllCapsWord = /\b[A-Z]{2,}\b/.test(sentence);
+      const hasExclamation = sentence.includes("!");
+
+      if (hasAllCapsWord) {
+        return `<span class="text-amber-300 font-semibold">${escapedSentence}</span>${escapedWhitespace}`;
+      }
+      if (hasExclamation) {
+        return `<span class="text-rose-300">${escapedSentence}</span>${escapedWhitespace}`;
+      }
+      return `${escapedSentence}${escapedWhitespace}`;
+    })
+    .join("");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function InputField({ label, children, variant = "dark", emphasis = "normal" }) {
