@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     batch_ai_model_size: int = Field(16, env="BATCH_AI_MODEL_SIZE")
     batch_ollama_parallelism: int = Field(1, env="BATCH_OLLAMA_PARALLELISM")
 
+    # Narrative graph matching. The engine combines concept-normalised token,
+    # character, entity, and tag signals to identify paraphrased campaigns.
+    narrative_similarity_threshold: float = Field(0.36, env="NARRATIVE_SIMILARITY_THRESHOLD")
+    narrative_candidate_limit: int = Field(5000, env="NARRATIVE_CANDIDATE_LIMIT")
+    narrative_candidates_per_item: int = Field(250, env="NARRATIVE_CANDIDATES_PER_ITEM")
+    narrative_major_cluster_size: int = Field(3, env="NARRATIVE_MAJOR_CLUSTER_SIZE")
+    narrative_neighbors_per_item: int = Field(20, env="NARRATIVE_NEIGHBORS_PER_ITEM")
+
     # Routine inter-node sharing. Payloads are protected with AES-256-GCM even
     # when a development node is temporarily unavailable. Production nodes
     # should expose HTTPS endpoints and set SECURE_TRANSFER_REQUIRE_TLS=true.

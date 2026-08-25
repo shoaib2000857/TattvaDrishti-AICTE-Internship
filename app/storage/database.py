@@ -106,6 +106,52 @@ class Database:
                 )
             """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS narrative_observations (
+                    intake_id TEXT PRIMARY KEY,
+                    text TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    actor_id TEXT,
+                    region TEXT,
+                    source TEXT,
+                    tags_json TEXT,
+                    observed_at TEXT NOT NULL,
+                    classification TEXT NOT NULL,
+                    composite_score REAL NOT NULL,
+                    feature_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS narrative_edges (
+                    source_intake_id TEXT NOT NULL,
+                    target_intake_id TEXT NOT NULL,
+                    similarity REAL NOT NULL,
+                    relationship TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (source_intake_id, target_intake_id)
+                )
+            """
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_narrative_observed_at "
+                "ON narrative_observations(observed_at)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_narrative_platform "
+                "ON narrative_observations(platform)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_narrative_edge_source "
+                "ON narrative_edges(source_intake_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_narrative_edge_target "
+                "ON narrative_edges(target_intake_id)"
+            )
 
     @contextmanager
     def _cursor(self):
@@ -243,6 +289,31 @@ class Database:
                 "created_at": row[10],
             }
 
+    def fetch_cases(self, limit: int = 5000) -> list[Dict[str, Any]]:
+        """Return stored cases in collection order for narrative backfill."""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT intake_id, raw_text, classification, composite_score,
+                       metadata_json, created_at
+                FROM cases
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (max(1, int(limit)),),
+            )
+            return [
+                {
+                    "intake_id": row[0],
+                    "raw_text": row[1],
+                    "classification": row[2],
+                    "composite_score": row[3],
+                    "metadata": json.loads(row[4] or "{}"),
+                    "created_at": row[5],
+                }
+                for row in cur.fetchall()
+            ]
+
     def log_action(self, intake_id: str, action: str, actor: str, payload: Dict[str, Any]):
         with self._cursor() as cur:
             cur.execute(
@@ -335,3 +406,77 @@ class Database:
                 """,
                 (status, datetime.utcnow().isoformat(), envelope_id),
             )
+
+    def save_narrative_observation(self, record: Dict[str, Any]) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO narrative_observations (
+                    intake_id, text, platform, actor_id, region, source,
+                    tags_json, observed_at, classification, composite_score,
+                    feature_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record["intake_id"], record["text"], record["platform"],
+                    record.get("actor_id"), record.get("region"), record.get("source"),
+                    json.dumps(record.get("tags", [])), record["observed_at"],
+                    record["classification"], record["composite_score"],
+                    json.dumps(record["features"]), datetime.utcnow().isoformat(),
+                ),
+            )
+
+    def save_narrative_edge(
+        self, source_id: str, target_id: str, similarity: float, relationship: str
+    ) -> None:
+        source_id, target_id = sorted((source_id, target_id))
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO narrative_edges (
+                    source_intake_id, target_intake_id, similarity,
+                    relationship, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (source_id, target_id, similarity, relationship, datetime.utcnow().isoformat()),
+            )
+
+    def fetch_narrative_observations(self, limit: int = 5000) -> list[Dict[str, Any]]:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT intake_id, text, platform, actor_id, region, source,
+                       tags_json, observed_at, classification, composite_score,
+                       feature_json
+                FROM narrative_observations
+                ORDER BY observed_at DESC
+                LIMIT ?
+                """,
+                (max(1, int(limit)),),
+            )
+            return [
+                {
+                    "intake_id": row[0], "text": row[1], "platform": row[2],
+                    "actor_id": row[3], "region": row[4], "source": row[5],
+                    "tags": json.loads(row[6] or "[]"), "observed_at": row[7],
+                    "classification": row[8], "composite_score": row[9],
+                    "features": json.loads(row[10] or "{}"),
+                }
+                for row in cur.fetchall()
+            ]
+
+    def fetch_narrative_edges(self, intake_id: Optional[str] = None) -> list[Dict[str, Any]]:
+        with self._cursor() as cur:
+            query = (
+                "SELECT source_intake_id, target_intake_id, similarity, relationship "
+                "FROM narrative_edges"
+            )
+            if intake_id:
+                query += " WHERE source_intake_id=? OR target_intake_id=?"
+                cur.execute(query, (intake_id, intake_id))
+            else:
+                cur.execute(query)
+            return [
+                {"source": row[0], "target": row[1], "similarity": row[2], "relationship": row[3]}
+                for row in cur.fetchall()
+            ]

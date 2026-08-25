@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,12 +17,17 @@ from .schemas import (
     BatchItemResult,
     BaseModel,
     DetectionResult,
+    CopilotRequest,
+    CopilotResponse,
+    NarrativeMatch,
+    NarrativeTrace,
     SharingPackage,
     SharingRequest,
     SecureTransferEnvelope,
     SecureTransferReceipt,
     SIEMCorrelationPayload,
     ThreatIntelFeed,
+    WarRoomSnapshot,
 )
 from .services.orchestrator import AnalysisOrchestrator
 from .services.batch import (
@@ -261,6 +266,57 @@ async def get_case(request: Request, intake_id: str):
             "decision_reason": record.get("decision_reason"),
         }
     )
+
+
+@app.get(
+    "/api/v1/narratives/{intake_id}/similar",
+    response_model=List[NarrativeMatch],
+)
+async def find_similar_content(request: Request, intake_id: str, limit: int = 20):
+    """Find duplicates and paraphrases across collected social platforms."""
+    await role_protection(request, "dashboard")
+    try:
+        return orchestrator.narratives.similar(intake_id, limit=limit)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get(
+    "/api/v1/narratives/{intake_id}/trace",
+    response_model=NarrativeTrace,
+)
+async def trace_narrative_origin(request: Request, intake_id: str):
+    """Trace a narrative to its earliest observation in collected evidence."""
+    await role_protection(request, "dashboard")
+    try:
+        return orchestrator.narratives.trace(intake_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get("/api/v1/war-room", response_model=WarRoomSnapshot)
+async def incident_war_room(
+    request: Request,
+    title: str = "Live Influence Incident",
+    window_hours: int = 24,
+    query: Optional[str] = None,
+):
+    await role_protection(request, "dashboard")
+    return orchestrator.narratives.war_room(
+        title=title[:160],
+        window_hours=max(1, min(window_hours, 720)),
+        query=query,
+    )
+
+
+@app.post("/api/v1/copilot", response_model=CopilotResponse)
+async def analyst_copilot(request: Request, payload: CopilotRequest):
+    """Answer only from evidence attached to the selected narrative."""
+    await role_protection(request, "dashboard")
+    try:
+        return orchestrator.narratives.copilot(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.post("/api/v1/share", response_model=SharingPackage)

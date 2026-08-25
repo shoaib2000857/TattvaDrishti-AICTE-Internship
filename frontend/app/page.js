@@ -16,6 +16,8 @@ import BlockchainGraph from "@/components/BlockchainGraph";
 import HopTraceMap from "@/components/HopTraceMap";
 import ThemeToggle from "@/components/ThemeToggle";
 import SocialIngestPanel from "@/components/SocialIngestPanel";
+import IncidentWarRoom from "@/components/IncidentWarRoom";
+import NarrativeTracker from "@/components/NarrativeTracker";
 import {
   submitIntake,
   fetchCase,
@@ -346,6 +348,10 @@ export default function HomePage() {
             </div>
           </div>
 
+          <div className="mt-12 min-w-0">
+            <IncidentWarRoom refreshKey={results.length} />
+          </div>
+
           <div className="mt-12 grid min-w-0 grid-cols-1 gap-8">
             <CaseDetail
               caseData={selectedCase}
@@ -354,6 +360,10 @@ export default function HomePage() {
               sharePending={sharePending}
               shareOutput={shareOutput}
             />
+          </div>
+
+          <div className="mt-12 min-w-0">
+            <NarrativeTracker intakeId={selectedId} />
           </div>
 
           <div className="mt-12 break-words">

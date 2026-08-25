@@ -14,6 +14,7 @@ from ..models.watermark import WatermarkEngine
 from ..schemas import ContentIntake, DetectionResult, SharingPackage, SharingRequest
 from ..storage.database import Database
 from ..federated.secure_transfer import SecureTransferService
+from .narrative_intel import NarrativeIntelEngine
 
 try:
     from ..federated.manager import LedgerManager
@@ -27,12 +28,17 @@ except ImportError:
 
 class AnalysisOrchestrator:
     def __init__(self) -> None:
+        self.db = Database()
         self.detector = DetectorEngine()
         self.watermark = WatermarkEngine()
         self.graph = GraphIntelEngine()
+        self.narratives = NarrativeIntelEngine(self.db)
+        self.graph.hydrate(
+            self.db.fetch_narrative_observations(),
+            self.db.fetch_narrative_edges(),
+        )
         self.sharing = SharingEngine()
         self.secure_transfer = SecureTransferService()
-        self.db = Database()
         self._event_queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=200)
         # NetworkX mutation and SQLite writes are ordered. Expensive detector
         # stages run before this lock and therefore still benefit from batching.
@@ -161,11 +167,19 @@ class AnalysisOrchestrator:
         summary_text = self._generate_summary(intake, classification, composite_score, breakdown)
         decision_reason = self._build_decision_reason(classification, composite_score, breakdown)
         with self._state_lock:
+            narrative_matches = self.narratives.ingest(
+                intake_id,
+                intake,
+                classification,
+                composite_score,
+                submitted_at,
+            )
             graph_summary = self.graph.ingest(
                 intake_id,
                 intake,
                 classification,
                 composite_score,
+                narrative_matches,
                 summarize=summarize_graph,
             )
             self.db.save_case(
@@ -234,6 +248,7 @@ class AnalysisOrchestrator:
                 "submitted_at": submitted_at.isoformat(),
                 "batch_id": batch_id,
                 "external_message_id": external_message_id,
+                "narrative_matches": len(narrative_matches),
             }
         )
         return result

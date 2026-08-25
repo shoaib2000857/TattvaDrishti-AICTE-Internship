@@ -75,6 +75,35 @@ export async function fetchCase(intakeId) {
   return res.json();
 }
 
+export async function fetchNarrativeTrace(intakeId) {
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/narratives/${encodeURIComponent(intakeId)}/trace`
+  );
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWarRoom({ title, windowHours = 24, query = "" } = {}) {
+  const params = new URLSearchParams({
+    title: title || "Live Influence Incident",
+    window_hours: String(windowHours),
+  });
+  if (query.trim()) params.set("query", query.trim());
+  const res = await fetch(`${API_BASE_URL}/api/v1/war-room?${params.toString()}`);
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function askAnalystCopilot(payload) {
+  const res = await fetch(`${API_BASE_URL}/api/v1/copilot`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function requestSharingPackage(payload) {
   // Always use main API for sharing - it has the case data
   const res = await fetch(`${API_BASE_URL}/api/v1/share`, {

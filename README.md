@@ -218,6 +218,18 @@ pytest
 
 Bulk chat/message collections can be submitted as a versioned JSON envelope or as JSON Lines. The batch path uses vectorized Hugging Face inference, bounded Ollama micro-batches, ordered persistence, and per-record error reporting. Ollama groups up to four messages into one structured generation by default and retries only malformed or omitted items individually. See [Batch Message Ingestion](docs/BATCH_INGESTION.md) and the files in [`samples/`](samples/).
 
+## Narrative intelligence and incident war room
+
+Every analysed message is also matched against a bounded semantic candidate set
+to identify duplicates and paraphrases across platforms. The analyst dashboard
+now includes origin tracing, ordered platform propagation, improved semantic
+graph clusters, an incident war room, and a copilot that answers only from the
+selected evidence. Upload
+[`samples/cross_platform_incident_batch.json`](samples/cross_platform_incident_batch.json)
+for a ready-to-run Telegram → WhatsApp → Reddit → X demonstration. Operational
+details and endpoints are documented in
+[Cross-platform narrative intelligence](docs/NARRATIVE_INTELLIGENCE.md).
+
 ---
 
 ## 📦 Dependencies

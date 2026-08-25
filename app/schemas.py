@@ -132,6 +132,118 @@ class PropagationChain(BaseModel):
     platforms: List[str] = Field(default_factory=list)
 
 
+class NarrativeMatch(BaseModel):
+    intake_id: str
+    similarity: float
+    relationship: Literal["near-duplicate", "paraphrase", "related"]
+    platform: str
+    actor_id: Optional[str] = None
+    region: Optional[str] = None
+    observed_at: datetime
+    text_preview: str
+
+
+class NarrativeObservation(BaseModel):
+    intake_id: str
+    platform: str
+    actor_id: Optional[str] = None
+    region: Optional[str] = None
+    observed_at: datetime
+    classification: str
+    composite_score: float
+    text_preview: str
+    similarity_to_previous: Optional[float] = None
+
+
+class OriginAssessment(BaseModel):
+    intake_id: str
+    platform: str
+    actor_id: Optional[str] = None
+    region: Optional[str] = None
+    observed_at: datetime
+    confidence: float
+    basis: List[str] = Field(default_factory=list)
+    caveat: str = "Earliest observation in collected evidence; not proof of authorship."
+
+
+class NarrativeTrace(BaseModel):
+    narrative_id: str
+    label: str
+    query_intake_id: str
+    origin: OriginAssessment
+    platforms: List[str]
+    actors: List[str]
+    regions: List[str]
+    observations: List[NarrativeObservation]
+    matches: List[NarrativeMatch]
+    first_seen: datetime
+    last_seen: datetime
+    velocity_per_hour: float
+    acceleration: float
+
+
+class TimelineBucket(BaseModel):
+    start: datetime
+    posts: int
+    high_risk: int
+
+
+class Hotspot(BaseModel):
+    region: str
+    posts: int
+    average_risk: float
+
+
+class WarRoomNarrative(BaseModel):
+    narrative_id: str
+    label: str
+    posts: int
+    platforms: List[str]
+    actors: int
+    average_risk: float
+    velocity_per_hour: float
+    acceleration: float
+    status: Literal["stable", "emerging", "accelerating"]
+    first_seen: datetime
+    last_seen: datetime
+
+
+class WarRoomSnapshot(BaseModel):
+    title: str
+    generated_at: datetime
+    window_hours: int
+    posts_analyzed: int
+    major_narratives: int
+    emerging_clusters: int
+    high_priority_accounts: int
+    accelerating_narratives: int
+    narratives: List[WarRoomNarrative]
+    hotspots: List[Hotspot]
+    timeline: List[TimelineBucket]
+    platforms: Dict[str, int]
+
+
+class CopilotRequest(BaseModel):
+    question: str = Field(..., min_length=3, max_length=1000)
+    intake_id: Optional[str] = None
+    narrative_id: Optional[str] = None
+    window_hours: int = Field(24, ge=1, le=720)
+
+
+class EvidenceCitation(BaseModel):
+    evidence_id: str
+    description: str
+    observed_at: Optional[datetime] = None
+
+
+class CopilotResponse(BaseModel):
+    answer: str
+    citations: List[EvidenceCitation] = Field(default_factory=list)
+    scope: str
+    grounded: bool = True
+    limitations: List[str] = Field(default_factory=list)
+
+
 class CommunitySnapshot(BaseModel):
     actors: List[str] = Field(default_factory=list)
     content: List[str] = Field(default_factory=list)

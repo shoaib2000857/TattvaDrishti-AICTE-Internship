@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "batch_id": "hyderabad-protest-cross-platform-demo",
+  "source_system": "multi-agency-social-export",
+  "collection_id": "hyd-protest-2026-08-25",
+  "classification_marking": "OFFICIAL:SENSITIVE",
+  "defaults": {
+    "language": "en",
+    "source": "social-media-collection",
+    "metadata": {
+      "region": "Hyderabad",
+      "collection_id": "hyd-protest-2026-08-25"
+    },
+    "tags": ["hyderabad-protest"]
+  },
+  "messages": [
+    {
+      "message_id": "tg-001",
+      "conversation_id": "telegram-field-watch",
+      "observed_at": "2026-08-25T03:10:00Z",
+      "text": "Police officials secretly detained several Hyderabad protest organisers near the central station before dawn, according to this urgent channel report.",
+      "metadata": {"platform": "telegram", "actor_id": "tg-groundwatch-17"},
+      "tags": ["hyderabad-protest", "detention-claim"]
+    },
+    {
+      "message_id": "wa-002",
+      "conversation_id": "whatsapp-community-forward",
+      "observed_at": "2026-08-25T03:34:00Z",
+      "text": "Forwarded message says Hyderabad protest leaders were detained in secret by law-enforcement officers close to the central railway station early this morning.",
+      "metadata": {"platform": "whatsapp", "actor_id": "wa-forward-chain-44"},
+      "tags": ["hyderabad-protest", "detention-claim"]
+    },
+    {
+      "message_id": "rd-003",
+      "conversation_id": "reddit-hyderabad-thread",
+      "observed_at": "2026-08-25T04:02:00Z",
+      "text": "Users are reporting that officers quietly arrested organisers of the Hyderabad demonstration near the main station before sunrise; no official confirmation yet.",
+      "metadata": {"platform": "reddit", "actor_id": "u/cityobserver_29"},
+      "tags": ["hyderabad-protest", "detention-claim"]
+    },
+    {
+      "message_id": "x-004",
+      "conversation_id": "x-hyd-protest",
+      "observed_at": "2026-08-25T04:26:00Z",
+      "text": "BREAKING: Organisers behind the Hyderabad protest were allegedly taken into custody by police near Central Station before daybreak. Authorities remain silent.",
+      "metadata": {"platform": "x", "actor_id": "@DeccanSignal"},
+      "tags": ["hyderabad-protest", "detention-claim"]
+    },
+    {
+      "message_id": "tg-005",
+      "conversation_id": "telegram-field-watch",
+      "observed_at": "2026-08-25T05:05:00Z",
+      "text": "A second message claims mobile internet will be shut down across Hyderabad at noon to prevent protest groups from coordinating their march.",
+      "metadata": {"platform": "telegram", "actor_id": "tg-groundwatch-17"},
+      "tags": ["hyderabad-protest", "internet-shutdown-claim"]
+    },
+    {
+      "message_id": "wa-006",
+      "conversation_id": "whatsapp-community-forward",
+      "observed_at": "2026-08-25T05:22:00Z",
+      "text": "Please share: Hyderabad mobile data is supposedly being disabled from midday so demonstrators cannot organise or communicate during the march.",
+      "metadata": {"platform": "whatsapp", "actor_id": "wa-forward-chain-44"},
+      "tags": ["hyderabad-protest", "internet-shutdown-claim"]
+    },
+    {
+      "message_id": "rd-007",
+      "conversation_id": "reddit-hyderabad-thread",
+      "observed_at": "2026-08-25T05:39:00Z",
+      "text": "Is the rumour about a citywide Hyderabad internet shutdown at noon real? Posts say it is intended to stop protest coordination and messaging.",
+      "metadata": {"platform": "reddit", "actor_id": "u/hyd_questions"},
+      "tags": ["hyderabad-protest", "internet-shutdown-claim"]
+    },
+    {
+      "message_id": "x-008",
+      "conversation_id": "x-hyd-protest",
+      "observed_at": "2026-08-25T05:51:00Z",
+      "text": "Unverified alert circulating: mobile internet may go offline across Hyderabad from 12 PM, allegedly to disrupt communication between protest participants.",
+      "metadata": {"platform": "x", "actor_id": "@MetroPulseLive"},
+      "tags": ["hyderabad-protest", "internet-shutdown-claim"]
+    },
+    {
+      "message_id": "x-009",
+      "conversation_id": "x-hyd-protest",
+      "observed_at": "2026-08-25T06:03:00Z",
+      "text": "Hyderabad Police state that the central station is operating normally and deny reports of a coordinated overnight detention operation.",
+      "metadata": {"platform": "x", "actor_id": "@HydCityPolice"},
+      "tags": ["hyderabad-protest", "detention-claim", "official-response"]
+    },
+    {
+      "message_id": "rd-010",
+      "conversation_id": "reddit-hyderabad-thread",
+      "observed_at": "2026-08-25T06:12:00Z",
+      "text": "Update to the Hyderabad protest thread: police have denied the secret detention story, while several original posters have not supplied evidence.",
+      "metadata": {"platform": "reddit", "actor_id": "u/cityobserver_29"},
+      "tags": ["hyderabad-protest", "detention-claim", "official-response"]
+    }
+  ]
+}
