@@ -359,6 +359,7 @@ export default function HomePage() {
               onShare={handleShare}
               sharePending={sharePending}
               shareOutput={shareOutput}
+              onSelectCase={handleSelectCase}
             />
           </div>
 

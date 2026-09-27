@@ -19,6 +19,8 @@ from ..schemas import (
     EvidenceCitation,
     Hotspot,
     NarrativeMatch,
+    SimilarMessageResult,
+    SimilarMessagesResponse,
     NarrativeObservation,
     NarrativeTrace,
     OriginAssessment,
@@ -166,6 +168,84 @@ class NarrativeIntelEngine:
                 )
         results.sort(key=lambda item: item.similarity, reverse=True)
         return results[: max(1, min(limit, 100))]
+
+    def find_similar_messages(
+        self,
+        intake_id: str,
+        *,
+        scope: str = "current_batch",
+        limit: Optional[int] = None,
+    ) -> SimilarMessagesResponse:
+        """Search existing, cached narrative representations only on request.
+
+        ``current_batch`` is used when the source came from an archive. For a
+        single intake there is no batch boundary, so the endpoint cleanly falls
+        back to all persisted analysed cases rather than returning a misleading
+        empty dataset.
+        """
+        records = self._records_by_id()
+        source = records.get(intake_id)
+        if source is None:
+            raise ValueError("Unknown narrative intake reference.")
+
+        normalized_scope = scope if scope in {"current_batch", "all_cases"} else "current_batch"
+        case = self.db.fetch_case(intake_id)
+        batch_id = case.get("batch_id") if case else None
+        allowed_ids: Optional[set[str]] = None
+        if normalized_scope == "current_batch" and batch_id:
+            allowed_ids = self.db.fetch_case_ids_for_batch(batch_id)
+        elif normalized_scope == "current_batch":
+            normalized_scope = "all_cases"
+
+        # Batch candidates are deliberately evaluated first. The data has
+        # already been normalised and feature-extracted during ingestion, so no
+        # detector, LLM, or new embedding inference is run here.
+        if allowed_ids is not None:
+            candidate_ids = [item for item in allowed_ids if item in records]
+        else:
+            candidate_ids = self._candidate_ids(source["features"])
+
+        matches: list[SimilarMessageResult] = []
+        seen: set[str] = set()
+        threshold = self.settings.similar_message_threshold
+        for candidate_id in candidate_ids:
+            if candidate_id == intake_id or candidate_id in seen:
+                continue
+            candidate = records.get(candidate_id)
+            if not candidate:
+                continue
+            score = self._similarity(source["features"], candidate["features"])
+            if score < threshold:
+                continue
+            seen.add(candidate_id)
+            candidate_case = self.db.fetch_case(candidate_id)
+            matches.append(
+                SimilarMessageResult(
+                    **self._match(candidate, score, self._relationship(score)).dict(),
+                    narrative=self._shared_narrative_label(source, candidate),
+                    classification=candidate.get("classification"),
+                    matching_reasons=self._matching_reasons(source, candidate),
+                    batch_id=candidate_case.get("batch_id") if candidate_case else None,
+                )
+            )
+
+        # Current-batch searches already contain only that batch. Across all
+        # cases, preserve a single investigator-friendly ranking: strongest
+        # observed similarity first.
+        matches.sort(key=lambda item: (-item.similarity, item.intake_id))
+        safe_limit = max(1, min(limit or self.settings.similar_message_limit, 100))
+        matches = matches[:safe_limit]
+        if matches:
+            message = f"{len(matches)} similar message{'s' if len(matches) != 1 else ''} found."
+        else:
+            message = "No strongly related messages were found in the selected scope."
+        return SimilarMessagesResponse(
+            query_message_id=intake_id,
+            scope=normalized_scope,
+            count=len(matches),
+            results=matches,
+            message=message,
+        )
 
     def trace(self, intake_id: str) -> NarrativeTrace:
         records = self._records_by_id()
@@ -455,6 +535,51 @@ class NarrativeIntelEngine:
         if token >= 0.55 and (entity >= 0.25 or tags >= 0.25):
             score += 0.08
         return round(min(1.0, score), 4)
+
+    def _matching_reasons(
+        self, source: Dict[str, Any], candidate: Dict[str, Any]
+    ) -> list[str]:
+        """Explain only overlap that is present in stored narrative features."""
+        source_features = source.get("features", {})
+        candidate_features = candidate.get("features", {})
+        reasons: list[str] = []
+        shared_tags = sorted(
+            set(source_features.get("tags", [])) & set(candidate_features.get("tags", []))
+        )
+        if shared_tags:
+            reasons.append(f"Shared narrative tag: {', '.join(shared_tags[:3])}")
+        shared_entities = sorted(
+            set(source_features.get("entities", [])) & set(candidate_features.get("entities", []))
+        )
+        if shared_entities:
+            reasons.append(f"Shared observed reference: {', '.join(shared_entities[:2])}")
+        shared_tokens = sorted(
+            set(source_features.get("tokens", {})) & set(candidate_features.get("tokens", {})),
+            key=lambda token: (
+                -min(
+                    source_features.get("tokens", {}).get(token, 0),
+                    candidate_features.get("tokens", {}).get(token, 0),
+                ),
+                token,
+            ),
+        )
+        if shared_tokens:
+            reasons.append(f"Overlapping narrative terms: {', '.join(shared_tokens[:4])}")
+        if not reasons:
+            # The feature comparison still observed a threshold-qualified
+            # character/word-pattern relationship; do not claim a topic that
+            # is not present in the stored evidence.
+            reasons.append("Related language patterns were observed in the analysed text.")
+        return reasons[:3]
+
+    @staticmethod
+    def _shared_narrative_label(
+        source: Dict[str, Any], candidate: Dict[str, Any]
+    ) -> Optional[str]:
+        shared_tags = sorted(
+            set(source.get("tags", [])) & set(candidate.get("tags", []))
+        )
+        return " / ".join(shared_tags[:3]) if shared_tags else None
 
     @staticmethod
     def _cosine(left: Dict[str, float], right: Dict[str, float]) -> float:

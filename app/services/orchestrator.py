@@ -15,6 +15,7 @@ from ..schemas import ContentIntake, DetectionResult, SharingPackage, SharingReq
 from ..storage.database import Database
 from ..federated.secure_transfer import SecureTransferService
 from .narrative_intel import NarrativeIntelEngine
+from .evidence_review import EvidenceReviewService
 
 try:
     from ..federated.manager import LedgerManager
@@ -33,6 +34,7 @@ class AnalysisOrchestrator:
         self.watermark = WatermarkEngine()
         self.graph = GraphIntelEngine()
         self.narratives = NarrativeIntelEngine(self.db)
+        self.evidence = EvidenceReviewService(self.db, self.narratives)
         self.graph.hydrate(
             self.db.fetch_narrative_observations(),
             self.db.fetch_narrative_edges(),

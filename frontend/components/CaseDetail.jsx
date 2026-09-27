@@ -2,6 +2,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import RadarChart from "./RadarChart";
 import HopTraceMap from "./HopTraceMap";
+import InvestigationActions from "./InvestigationActions";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
@@ -28,6 +29,7 @@ export default function CaseDetail({
   onShare,
   sharePending,
   shareOutput,
+  onSelectCase,
 }) {
   const [formState, setFormState] = useState(defaultShareForm);
   const [showRiskWarning, setShowRiskWarning] = useState(false);
@@ -201,6 +203,11 @@ export default function CaseDetail({
           </p>
         </section>
       )}
+
+      <InvestigationActions
+        intakeId={caseData.intake_id}
+        onOpenCase={onSelectCase}
+      />
 
       <section className="space-y-5">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">

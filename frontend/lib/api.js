@@ -75,6 +75,24 @@ export async function fetchCase(intakeId) {
   return res.json();
 }
 
+export async function findSimilarMessages(intakeId, { scope = "current_batch", limit } = {}) {
+  const params = new URLSearchParams({ scope });
+  if (limit) params.set("limit", String(limit));
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/cases/${encodeURIComponent(intakeId)}/similar?${params}`
+  );
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEvidenceReview(intakeId) {
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/cases/${encodeURIComponent(intakeId)}/evidence`
+  );
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function fetchNarrativeTrace(intakeId) {
   const res = await fetch(
     `${API_BASE_URL}/api/v1/narratives/${encodeURIComponent(intakeId)}/trace`

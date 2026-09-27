@@ -26,6 +26,8 @@ from .schemas import (
     SecureTransferEnvelope,
     SecureTransferReceipt,
     SIEMCorrelationPayload,
+    SimilarMessagesResponse,
+    EvidenceReview,
     ThreatIntelFeed,
     WarRoomSnapshot,
 )
@@ -277,6 +279,41 @@ async def find_similar_content(request: Request, intake_id: str, limit: int = 20
     await role_protection(request, "dashboard")
     try:
         return orchestrator.narratives.similar(intake_id, limit=limit)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get(
+    "/api/v1/cases/{intake_id}/similar",
+    response_model=SimilarMessagesResponse,
+)
+async def find_similar_case_messages(
+    request: Request,
+    intake_id: str,
+    scope: str = "current_batch",
+    limit: Optional[int] = None,
+):
+    """On-demand related-message search over stored narrative features."""
+    await role_protection(request, "dashboard")
+    try:
+        return orchestrator.narratives.find_similar_messages(
+            intake_id,
+            scope=scope,
+            limit=limit,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get(
+    "/api/v1/cases/{intake_id}/evidence",
+    response_model=EvidenceReview,
+)
+async def review_case_evidence(request: Request, intake_id: str):
+    """Assemble a balanced evidence view from existing stored outputs only."""
+    await role_protection(request, "dashboard")
+    try:
+        return orchestrator.evidence.review(intake_id)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

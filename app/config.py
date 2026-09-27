@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     narrative_major_cluster_size: int = Field(3, env="NARRATIVE_MAJOR_CLUSTER_SIZE")
     narrative_neighbors_per_item: int = Field(20, env="NARRATIVE_NEIGHBORS_PER_ITEM")
 
+    # Investigator-requested similarity uses the stored narrative feature index.
+    # It is intentionally on-demand and does not affect ingestion or scoring.
+    similar_message_threshold: float = Field(0.36, env="SIMILAR_MESSAGE_THRESHOLD")
+    similar_message_limit: int = Field(20, env="SIMILAR_MESSAGE_LIMIT")
+
     # Routine inter-node sharing. Payloads are protected with AES-256-GCM even
     # when a development node is temporarily unavailable. Production nodes
     # should expose HTTPS endpoints and set SECURE_TRANSFER_REQUIRE_TLS=true.

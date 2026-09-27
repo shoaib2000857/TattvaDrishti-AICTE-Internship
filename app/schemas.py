@@ -143,6 +143,44 @@ class NarrativeMatch(BaseModel):
     text_preview: str
 
 
+class SimilarMessageResult(NarrativeMatch):
+    """A stored narrative match prepared for the investigator-facing case view."""
+
+    narrative: Optional[str] = None
+    classification: Optional[str] = None
+    matching_reasons: List[str] = Field(default_factory=list)
+    batch_id: Optional[str] = None
+
+
+class SimilarMessagesResponse(BaseModel):
+    query_message_id: str
+    scope: Literal["current_batch", "all_cases"]
+    count: int
+    results: List[SimilarMessageResult] = Field(default_factory=list)
+    message: str
+
+
+class EvidenceItem(BaseModel):
+    type: str
+    label: str
+    description: str
+    strength: Literal["strong", "moderate", "limited"] = "moderate"
+    source: str
+
+
+class EvidenceReview(BaseModel):
+    intake_id: str
+    supporting: List[EvidenceItem] = Field(default_factory=list)
+    counter: List[EvidenceItem] = Field(default_factory=list)
+    uncertainties: List[EvidenceItem] = Field(default_factory=list)
+    signals_disagree: bool = False
+    disagreement_summary: Optional[str] = None
+    analyst_note: str = (
+        "These indicators support prioritization for review. They do not establish "
+        "factual truth, intent, guilt, or attribution."
+    )
+
+
 class NarrativeObservation(BaseModel):
     intake_id: str
     platform: str

@@ -314,6 +314,17 @@ class Database:
                 for row in cur.fetchall()
             ]
 
+    def fetch_case_ids_for_batch(self, batch_id: str) -> set[str]:
+        """Return only persisted cases from one uploaded batch."""
+        if not batch_id:
+            return set()
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT intake_id FROM cases WHERE batch_id=?",
+                (batch_id,),
+            )
+            return {str(row[0]) for row in cur.fetchall()}
+
     def log_action(self, intake_id: str, action: str, actor: str, payload: Dict[str, Any]):
         with self._cursor() as cur:
             cur.execute(
